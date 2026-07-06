@@ -574,7 +574,9 @@ function calcCost(e){
     const [y,m]=e.date.split('-').map(Number);
     return dailyCostFor(r,y,m);
   }
-  return (e.pages||0)*r.cost;
+  // Freelancer: use special rate if flagged and set, else normal rate
+  const rate = (e.is_special_rate && r.special_cost) ? r.special_cost : r.cost;
+  return (e.pages||0)*rate;
 }
 
 // ── Supabase fetch wrappers ───────────────────────────────
@@ -748,6 +750,7 @@ function renderRes() {
           costLabel = fmt(r.cost)+'/day';
         } else {
           costLabel = fmt(r.cost)+'/page';
+          if(r.special_cost) costLabel += ` <span style="color:var(--purple)">(${fmt(r.special_cost)}/pg Complex-Form)</span>`;
         }
         return `<tr>
         <td class="td-main">${r.name}</td>
@@ -797,7 +800,9 @@ window.openResModal = function(id) {
     </div>
 
     <div id="r-frl-block" style="display:${type==='Freelancer'?'block':'none'}">
-      <div class="f-group"><div class="f-label">Cost per page (₹)</div><input class="f-input" id="r-cost-frl" type="number" value="${type==='Freelancer'?(r.cost||''):''}" placeholder="e.g. 30"></div>
+      <div class="f-group"><div class="f-label">Normal price per page (₹)</div><input class="f-input" id="r-cost-frl" type="number" value="${type==='Freelancer'?(r.cost||''):''}" placeholder="e.g. 30"></div>
+      <div class="f-group"><div class="f-label">Special price per page (₹) — for Complex / Form files</div><input class="f-input" id="r-special-cost" type="number" value="${r.special_cost||''}" placeholder="e.g. 50 (optional)"></div>
+      <div class="f-hint">Leave blank if this freelancer charges the same rate for every file. When set, you'll get a per-entry toggle in the Work log to apply this rate for Complex or Form files.</div>
     </div>
 
     <div class="info-box">👔 <strong>Employee</strong> — cost applies every day they're present, with or without files. Choose fixed daily rate, or enter a monthly salary and let the app work out the correct per-day figure for each month.<br>🧑‍💻 <strong>Freelancer</strong> — cost charged only per page assigned. No pages = ₹0 cost.</div>
@@ -839,7 +844,7 @@ window.saveRes = async function(id) {
   const type=document.getElementById('r-type').value;
   if(!name){alert('Name required');return;}
 
-  let cost=0, salary_type='daily', monthly_salary=null;
+  let cost=0, salary_type='daily', monthly_salary=null, special_cost=null;
   if(type==='Employee'){
     salary_type = document.getElementById('r-salary-type').value;
     if(salary_type==='monthly'){
@@ -851,11 +856,13 @@ window.saveRes = async function(id) {
     }
   } else {
     cost = parseFloat(document.getElementById('r-cost-frl').value)||0;
+    const sc = parseFloat(document.getElementById('r-special-cost').value);
+    special_cost = isNaN(sc) ? null : sc;
     salary_type='daily'; monthly_salary=null;
   }
 
   try {
-    const payload = {name,role,type,cost,salary_type,monthly_salary};
+    const payload = {name,role,type,cost,salary_type,monthly_salary,special_cost};
     if(id) { await sbPatch(`resources?id=eq.${id}`,payload); }
     else   { await sbPost('resources',payload); }
     await loadAll(); closeM(); render(); toast(id?'Resource updated':'Resource added');
@@ -1044,7 +1051,7 @@ function renderLog() {
           <td><span class="badge ${r?.type==='Employee'?'b-emp':'b-frl'}">${r?.type||'—'}</span></td>
           <td>${c?.name||'—'}</td>
           <td><span class="badge ${bc}">${e.complexity}</span></td>
-          <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text3)" title="${e.task||''}">${e.task||'—'}</td>
+          <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text3)" title="${e.task||''}">${e.task||'—'}${e.is_special_rate?' <span class="badge b-Hol" style="padding:1px 6px" title="Special rate applied">★</span>':''}</td>
           <td class="td-mono">${e.pages||0}</td>
           <td class="td-mono">${fmt(rate)}</td>
           <td class="td-mono" style="color:var(--green)">${fmt(rv)}</td>
@@ -1063,7 +1070,7 @@ window.openLogModal = function() {
   showM(`<div class="modal-title">Add work log entry</div>
     <div class="f-row">
       <div class="f-group"><div class="f-label">Date</div><input class="f-input" id="l-date" type="date" value="${toDay()}" onchange="updPrev()"></div>
-      <div class="f-group"><div class="f-label">Resource</div><select class="f-input" id="l-res" onchange="updPrev()">${ro}</select></div>
+      <div class="f-group"><div class="f-label">Resource</div><select class="f-input" id="l-res" onchange="onLogResChange()">${ro}</select></div>
     </div>
     <div class="f-row">
       <div class="f-group"><div class="f-label">Client</div><select class="f-input" id="l-cli" onchange="updPrev()">${co}</select></div>
@@ -1076,11 +1083,31 @@ window.openLogModal = function() {
       <div class="f-group"><div class="f-label">Pages</div><input class="f-input" id="l-pages" type="number" min="0" placeholder="0" oninput="updPrev()"></div>
       <div class="f-group"><div class="f-label">Override rate (₹/pg) — optional</div><input class="f-input" id="l-rate" type="number" placeholder="Auto from matrix" oninput="updPrev()"></div>
     </div>
+    <div id="l-special-block" style="display:none;margin-bottom:14px">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text2)">
+        <input type="checkbox" id="l-special" onchange="updPrev()" style="width:16px;height:16px;accent-color:var(--accent)">
+        <span id="l-special-label">Complex / Form file — use special rate</span>
+      </label>
+    </div>
     <div id="l-prev" class="preview-box" style="display:none"></div>
     <div class="modal-footer">
       <button class="btn" onclick="closeM()">Cancel</button>
       <button class="btn btn-primary" onclick="saveLog()">Add entry</button>
     </div>`);
+  onLogResChange();
+};
+window.onLogResChange = function() {
+  const rid=document.getElementById('l-res')?.value;
+  const r=S.resources.find(x=>x.id===rid);
+  const block=document.getElementById('l-special-block');
+  if(r && r.type==='Freelancer' && r.special_cost){
+    block.style.display='block';
+    document.getElementById('l-special-label').textContent =
+      `Complex / Form file — use special rate (${fmt(r.special_cost)}/pg instead of ${fmt(r.cost)}/pg)`;
+  } else {
+    block.style.display='none';
+    const cb=document.getElementById('l-special'); if(cb) cb.checked=false;
+  }
   updPrev();
 };
 window.updPrev = function() {
@@ -1089,11 +1116,17 @@ window.updPrev = function() {
   const cmp=document.getElementById('l-cmp')?.value;
   const pgs=+document.getElementById('l-pages')?.value||0;
   const ov=parseFloat(document.getElementById('l-rate')?.value);
+  const isSpecial=document.getElementById('l-special')?.checked||false;
   const r=S.resources.find(x=>x.id===rid);
   const rate=isNaN(ov)?getRate(cid,cmp):ov;
   const dateVal=document.getElementById('l-date')?.value||toDay();
   const [py,pm]=dateVal.split('-').map(Number);
-  const rv=pgs*rate, cs=r?(r.type==='Employee'?dailyCostFor(r,py,pm):pgs*r.cost):0, pf=rv-cs;
+  let cs=0;
+  if(r){
+    if(r.type==='Employee') cs=dailyCostFor(r,py,pm);
+    else { const frRate=(isSpecial&&r.special_cost)?r.special_cost:r.cost; cs=pgs*frRate; }
+  }
+  const rv=pgs*rate, pf=rv-cs;
   const pv=document.getElementById('l-prev'); if(!pv)return;
   pv.style.display='flex';
   pv.innerHTML=`
@@ -1111,9 +1144,10 @@ window.saveLog = async function() {
   const pages=+document.getElementById('l-pages').value||0;
   const ov=parseFloat(document.getElementById('l-rate').value);
   const override_rate=isNaN(ov)?null:ov;
+  const is_special_rate=document.getElementById('l-special')?.checked||false;
   if(!date){alert('Date required');return;}
   try {
-    await sbPost('worklog',{date,resource_id,client_id,complexity,task,pages,override_rate});
+    await sbPost('worklog',{date,resource_id,client_id,complexity,task,pages,override_rate,is_special_rate});
     await loadAll(); closeM(); render(); toast('Entry added ✓');
   } catch(e){ alert('Error: '+e.message); }
 };
@@ -1162,7 +1196,7 @@ function renderDaily() {
           <td><span class="badge ${r?.type==='Employee'?'b-emp':'b-frl'}">${r?.type||'—'}</span></td>
           <td>${c?.name||'—'}</td>
           <td><span class="badge ${bc}">${e.complexity}</span></td>
-          <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text3)">${e.task||'—'}</td>
+          <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text3)">${e.task||'—'}${e.is_special_rate?' <span class="badge b-Hol" style="padding:1px 6px" title="Special rate applied">★</span>':''}</td>
           <td class="td-mono">${e.pages||0}</td>
           <td class="td-mono" style="color:var(--green)">${fmt(rv)}</td>
           <td class="td-mono" style="color:var(--red)">${fmt(cs)}</td>

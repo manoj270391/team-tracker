@@ -11,6 +11,7 @@ create table if not exists resources (
   cost            numeric not null default 0,       -- Employee: daily cost (if salary_type='daily') | Freelancer: cost per page
   salary_type     text not null default 'daily' check (salary_type in ('daily','monthly')),
   monthly_salary  numeric,                            -- Employee only, used when salary_type='monthly'
+  special_cost    numeric,                            -- Freelancer only, higher rate for Complex/Form files
   created_at      timestamptz default now()
 );
 
@@ -42,6 +43,7 @@ create table if not exists worklog (
   task           text,
   pages          int default 0,
   override_rate  numeric,
+  is_special_rate boolean not null default false,     -- true = freelancer's special Complex/Form rate applies
   created_at     timestamptz default now()
 );
 
