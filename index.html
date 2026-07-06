@@ -153,8 +153,8 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
 .b-frl    { background: var(--greent);  color: var(--green);  }
 .b-P      { background: var(--greent);  color: var(--green);  }
 .b-A      { background: var(--redt);    color: var(--red);    }
-.b-H      { background: var(--ambert);  color: var(--amber);  }
-.b-L      { background: var(--bg4);     color: var(--text2);  }
+.b-HF     { background: var(--ambert);  color: var(--amber);  }
+.b-Hol    { background: var(--purplet); color: var(--purple); }
 .b-profit { background: var(--greent);  color: var(--green);  }
 .b-loss   { background: var(--redt);    color: var(--red);    }
 .b-sim    { background: var(--bluet);   color: var(--blue);   }
@@ -203,10 +203,11 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
   transition: transform .1s, border-color .1s; user-select: none;
 }
 .att-cell:hover { transform: scale(1.12); border-color: var(--border2); }
-.att-cell[data-v="P"] { background:rgba(54,211,153,.15); border-color:rgba(54,211,153,.5); color:var(--green); }
-.att-cell[data-v="A"] { background:rgba(248,113,113,.15); border-color:rgba(248,113,113,.5); color:var(--red); }
-.att-cell[data-v="H"] { background:rgba(251,191,36,.15); border-color:rgba(251,191,36,.5); color:var(--amber); }
-.att-cell[data-v="L"] { background:rgba(139,150,176,.12); border-color:rgba(139,150,176,.35); color:var(--text2); }
+.att-cell[data-v="P"]  { background:rgba(54,211,153,.15); border-color:rgba(54,211,153,.5); color:var(--green); }
+.att-cell[data-v="A"]  { background:rgba(248,113,113,.15); border-color:rgba(248,113,113,.5); color:var(--red); }
+.att-cell[data-v="HF"] { background:rgba(251,191,36,.15); border-color:rgba(251,191,36,.5); color:var(--amber); font-size:9px; }
+.att-cell[data-v="H"]  { background:rgba(167,139,250,.15); border-color:rgba(167,139,250,.5); color:var(--purple); cursor:default; }
+.att-cell[data-v="H"]:hover { transform:none; }
 
 /* ── Progress bar ───────────────────────────────────────── */
 .pbar { height: 5px; background: var(--bg4); border-radius: 3px; overflow: hidden; margin-top: 5px; }
@@ -460,9 +461,9 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
               <strong style="color:var(--text2)">Key:</strong>
               <span><span class="badge b-P">P</span> Present</span>
               <span><span class="badge b-A">A</span> Absent</span>
-              <span><span class="badge b-H">H</span> Half-day</span>
-              <span><span class="badge b-L">L</span> Leave</span>
-              <span style="color:var(--text3)">· Click any cell to cycle through</span>
+              <span><span class="badge b-HF">HF</span> Half-day</span>
+              <span><span class="badge b-Hol">H</span> Holiday — Sunday or public holiday, marked automatically</span>
+              <span style="color:var(--text3)">· Click any working day to cycle P → A → HF</span>
             </div>
           </div>
         </div>
@@ -531,7 +532,7 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
 <script>
 // ── Globals ───────────────────────────────────────────────
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-const STATUSES = ["","P","A","H","L"];
+const STATUSES = ["","P","A","HF"];
 const now = new Date();
 let SB_URL = '', SB_KEY = '';
 let S = { resources:[], clients:[], attendance:{}, log:[], holidays:{} };
@@ -925,16 +926,30 @@ function renderAtt() {
   let html=`<div class="att-grid" style="grid-template-columns:${cols}">`;
   html+=`<div style="font-size:10px;font-weight:700;color:var(--text3);padding:2px 8px 2px 0;align-self:center">Resource</div>`;
   html+=`<div style="font-size:10px;font-weight:700;color:var(--text3);text-align:center">P</div>`;
-  for(let d=1;d<=days;d++) html+=`<div style="font-size:10px;font-weight:700;color:var(--text3);text-align:center">${d}</div>`;
+  for(let d=1;d<=days;d++){
+    const isOff = new Date(curY,curM-1,d).getDay()===0 || !!S.holidays[holidayKey(curY,curM,d)];
+    html+=`<div style="font-size:10px;font-weight:700;color:${isOff?'var(--purple)':'var(--text3)'};text-align:center">${d}</div>`;
+  }
   S.resources.forEach(r=>{
     let pc=0;
     html+=`<div style="font-size:12px;font-weight:600;color:var(--text2);padding:2px 8px 2px 0;display:flex;align-items:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="${r.name}">${r.name.split(' ')[0]}</div>`;
-    for(let d=1;d<=days;d++) if(S.attendance[attK(r.id,curY,curM,d)]?.status==='P') pc++;
+    for(let d=1;d<=days;d++){
+      const isSun = new Date(curY,curM-1,d).getDay()===0;
+      const hol = S.holidays[holidayKey(curY,curM,d)];
+      if(!isSun && !hol && S.attendance[attK(r.id,curY,curM,d)]?.status==='P') pc++;
+    }
     html+=`<div style="font-size:12px;font-family:var(--mono);color:var(--text3);display:flex;align-items:center;justify-content:center" id="ap_${r.id}">${pc}</div>`;
     for(let d=1;d<=days;d++){
-      const k=attK(r.id,curY,curM,d);
-      const v=S.attendance[k]?.status||'';
-      html+=`<div class="att-cell" data-v="${v}" onclick="cycleAtt('${r.id}',${curY},${curM},${d})" title="${r.name} – Day ${d}">${v}</div>`;
+      const isSun = new Date(curY,curM-1,d).getDay()===0;
+      const hol = S.holidays[holidayKey(curY,curM,d)];
+      if(isSun||hol){
+        const label = isSun ? 'Sunday (auto-holiday)' : (hol.name || 'Public holiday');
+        html+=`<div class="att-cell" data-v="H" title="${label}">H</div>`;
+      } else {
+        const k=attK(r.id,curY,curM,d);
+        const v=S.attendance[k]?.status||'';
+        html+=`<div class="att-cell" data-v="${v}" onclick="cycleAtt('${r.id}',${curY},${curM},${d})" title="${r.name} – Day ${d}">${v}</div>`;
+      }
     }
   });
   html+='</div>';
@@ -942,6 +957,10 @@ function renderAtt() {
 }
 
 window.cycleAtt = async function(rid,y,m,d) {
+  // Guard: never allow toggling on Sundays or public holidays — those are automatic
+  const isSun = new Date(y,m-1,d).getDay()===0;
+  if(isSun || S.holidays[holidayKey(y,m,d)]) return;
+
   const k=attK(rid,y,m,d), cur=S.attendance[k]?.status||'';
   const next=STATUSES[(STATUSES.indexOf(cur)+1)%STATUSES.length];
   try {
@@ -1159,7 +1178,11 @@ function renderMonthly() {
   const days=dim(curY,curM);
   const rows=S.resources.map(r=>{
     let pres=0;
-    for(let d=1;d<=days;d++) if(S.attendance[attK(r.id,curY,curM,d)]?.status==='P') pres++;
+    for(let d=1;d<=days;d++){
+      const isSun = new Date(curY,curM-1,d).getDay()===0;
+      const hol = S.holidays[holidayKey(curY,curM,d)];
+      if(!isSun && !hol && S.attendance[attK(r.id,curY,curM,d)]?.status==='P') pres++;
+    }
     const ents=S.log.filter(e=>{ const[ey,em]=e.date.split('-').map(Number); return e.resource_id===r.id&&ey===curY&&em===curM; });
     const pgs=ents.reduce((s,e)=>s+(e.pages||0),0);
     const rv=ents.reduce((s,e)=>s+calcRev(e),0);
