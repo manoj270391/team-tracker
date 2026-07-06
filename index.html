@@ -383,6 +383,7 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
         <button class="sb-item active" onclick="nav('dashboard')" data-p="dashboard"><span class="sb-icon">⚡</span>Dashboard</button>
         <button class="sb-item" onclick="nav('daily')" data-p="daily"><span class="sb-icon">☀</span>Daily view</button>
         <button class="sb-item" onclick="nav('monthly')" data-p="monthly"><span class="sb-icon">📅</span>Monthly summary</button>
+        <button class="sb-item" onclick="nav('leaves')" data-p="leaves"><span class="sb-icon">🌴</span>Leave summary</button>
       </div>
       <div>
         <div class="sb-section-label">Manage</div>
@@ -515,6 +516,25 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
         </div>
       </div>
 
+      <!-- LEAVE SUMMARY -->
+      <div id="p-leaves" class="page">
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-body" style="padding:11px 20px">
+            <div style="font-size:12px;color:var(--text3);line-height:1.6">
+              Leave day = Absent (A) counted as 1, Half-day (HF) counted as 0.5. Sundays and public holidays are excluded — they're not working days to begin with. Applies to Employees only.
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Monthly breakdown — <span id="lv-year-label"></span></div></div>
+          <div class="t-wrap"><table id="lv-month-table"><thead></thead><tbody id="lv-month-tb"></tbody></table></div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Quarterly &amp; yearly totals</div></div>
+          <div class="t-wrap"><table><thead><tr><th>Employee</th><th>Q1 (Jan–Mar)</th><th>Q2 (Apr–Jun)</th><th>Q3 (Jul–Sep)</th><th>Q4 (Oct–Dec)</th><th>Year total</th></tr></thead><tbody id="lv-q-tb"></tbody></table></div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -533,7 +553,14 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
 // ── Globals ───────────────────────────────────────────────
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const STATUSES = ["","P","A","HF"];
-const now = new Date();
+function pad2(n){ return String(n).padStart(2,'0'); }
+// Always compute "now" in India Standard Time, regardless of the visitor's device timezone
+function getISTDate(){
+  const d = new Date();
+  const utcMs = d.getTime() + d.getTimezoneOffset()*60000;
+  return new Date(utcMs + 5.5*60*60000);
+}
+const now = getISTDate();
 let SB_URL = '', SB_KEY = '';
 let S = { resources:[], clients:[], attendance:{}, log:[], holidays:{} };
 let cRes=null, cCli=null;
@@ -541,7 +568,7 @@ let curM = now.getMonth()+1, curY = now.getFullYear();
 
 const fmt   = n => (n==null||n==='') ? '—' : '₹'+Math.round(n).toLocaleString('en-IN');
 const fmtN  = n => (n==null||n==='') ? '—' : Math.round(n).toLocaleString('en-IN');
-const toDay = () => now.toISOString().slice(0,10);
+const toDay = () => { const d=getISTDate(); return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; };
 const dim   = (y,m) => new Date(y,m,0).getDate();
 const attK  = (rid,y,m,d) => `${rid}_${y}_${m}_${d}`;
 
@@ -663,7 +690,7 @@ function setDbStatus(s) {
 }
 
 // ── Nav ───────────────────────────────────────────────────
-const PAGE_TITLES = {dashboard:'Dashboard',resources:'Resources',clients:'Clients',attendance:'Attendance',worklog:'Work log',daily:'Daily view',monthly:'Monthly summary',holidays:'Holidays'};
+const PAGE_TITLES = {dashboard:'Dashboard',resources:'Resources',clients:'Clients',attendance:'Attendance',worklog:'Work log',daily:'Daily view',monthly:'Monthly summary',holidays:'Holidays',leaves:'Leave summary'};
 
 window.nav = function(p) {
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
@@ -674,12 +701,14 @@ window.nav = function(p) {
 
   const btn = document.getElementById('h-btn');
   const mp  = document.getElementById('month-picker');
-  btn.style.display='none'; mp.style.display='none';
+  const selM = document.getElementById('sel-m');
+  btn.style.display='none'; mp.style.display='none'; selM.style.display='inline-block';
 
   if(p==='resources'){ btn.style.display='flex'; btn.textContent='+ Add resource'; btn.onclick=()=>openResModal(); }
   if(p==='clients')  { btn.style.display='flex'; btn.textContent='+ Add client';   btn.onclick=()=>openCliModal(); }
   if(p==='worklog')  { btn.style.display='flex'; btn.textContent='+ Add entry';    btn.onclick=()=>openLogModal(); }
-  if(['attendance','daily','monthly','holidays'].includes(p)) mp.style.display='flex';
+  if(['attendance','daily','monthly','holidays','leaves'].includes(p)) mp.style.display='flex';
+  if(p==='leaves') selM.style.display='none'; // leave summary only needs a year, not a month
 
   render(p);
 };
@@ -694,6 +723,7 @@ function render(p) {
   if(p==='daily')      renderDaily();
   if(p==='monthly')    renderMonthly();
   if(p==='holidays')   renderHolidays();
+  if(p==='leaves')     renderLeaves();
 }
 
 // ── Month pickers ─────────────────────────────────────────
@@ -927,7 +957,8 @@ window.delCli = async function(id) {
 function renderAtt() {
   const days=dim(curY,curM);
   const g=document.getElementById('att-grid');
-  if(!S.resources.length){g.innerHTML='<div class="empty"><div class="empty-ico">👥</div><div class="empty-txt">Add resources first.</div></div>';return;}
+  const employees = S.resources.filter(r=>r.type==='Employee');
+  if(!employees.length){g.innerHTML='<div class="empty"><div class="empty-ico">👥</div><div class="empty-txt">No employees yet. Attendance only applies to Employees — Freelancers are billed per page, not per day.</div></div>';return;}
 
   const cols=`170px 36px repeat(${days},27px)`;
   let html=`<div class="att-grid" style="grid-template-columns:${cols}">`;
@@ -937,7 +968,7 @@ function renderAtt() {
     const isOff = new Date(curY,curM-1,d).getDay()===0 || !!S.holidays[holidayKey(curY,curM,d)];
     html+=`<div style="font-size:10px;font-weight:700;color:${isOff?'var(--purple)':'var(--text3)'};text-align:center">${d}</div>`;
   }
-  S.resources.forEach(r=>{
+  S.resources.filter(r=>r.type==='Employee').forEach(r=>{
     let pc=0;
     html+=`<div style="font-size:12px;font-weight:600;color:var(--text2);padding:2px 8px 2px 0;display:flex;align-items:center;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="${r.name}">${r.name.split(' ')[0]}</div>`;
     for(let d=1;d<=days;d++){
@@ -1036,7 +1067,7 @@ window.toggleHoliday = async function(y,m,d) {
 
 // ── WORK LOG ──────────────────────────────────────────────
 function renderLog() {
-  const sorted=[...S.log].sort((a,b)=>b.date.localeCompare(a.date));
+  const sorted=[...S.log].sort((a,b)=>a.date.localeCompare(b.date));
   document.getElementById('l-tb').innerHTML = !sorted.length
     ? `<tr><td colspan="12"><div class="empty"><div class="empty-ico">📋</div><div class="empty-txt">No entries yet. Click + Add entry.</div></div></td></tr>`
     : sorted.map(e=>{
@@ -1057,42 +1088,47 @@ function renderLog() {
           <td class="td-mono" style="color:var(--green)">${fmt(rv)}</td>
           <td class="td-mono" style="color:var(--red)">${fmt(cs)}</td>
           <td class="td-mono" style="color:${pf>=0?'var(--green)':'var(--red)'};font-weight:700">${fmt(pf)}</td>
-          <td><button class="btn btn-danger btn-sm" onclick="delLog('${e.id}')">Del</button></td>
+          <td><div style="display:flex;gap:6px">
+            <button class="btn btn-ghost btn-sm" onclick="openLogModal('${e.id}')">Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="delLog('${e.id}')">Del</button>
+          </div></td>
         </tr>`;
       }).join('');
 }
 
-window.openLogModal = function() {
+window.openLogModal = function(id) {
   if(!S.resources.length){alert('Add resources first');return;}
   if(!S.clients.length){alert('Add clients first');return;}
-  const ro=S.resources.map(r=>`<option value="${r.id}">${r.name} (${r.type})</option>`).join('');
-  const co=S.clients.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
-  showM(`<div class="modal-title">Add work log entry</div>
+  const e = id ? S.log.find(x=>x.id===id) : null;
+  const ro=S.resources.map(r=>`<option value="${r.id}" ${e&&e.resource_id===r.id?'selected':''}>${r.name} (${r.type})</option>`).join('');
+  const co=S.clients.map(c=>`<option value="${c.id}" ${e&&e.client_id===c.id?'selected':''}>${c.name}</option>`).join('');
+  const cmps=['Simple','Medium','Complex'].map(c=>`<option ${e&&e.complexity===c?'selected':''}>${c}</option>`).join('');
+  showM(`<div class="modal-title">${id?'Edit':'Add'} work log entry</div>
     <div class="f-row">
-      <div class="f-group"><div class="f-label">Date</div><input class="f-input" id="l-date" type="date" value="${toDay()}" onchange="updPrev()"></div>
+      <div class="f-group"><div class="f-label">Date</div><input class="f-input" id="l-date" type="date" value="${e?e.date:toDay()}" onchange="updPrev()"></div>
       <div class="f-group"><div class="f-label">Resource</div><select class="f-input" id="l-res" onchange="onLogResChange()">${ro}</select></div>
     </div>
     <div class="f-row">
       <div class="f-group"><div class="f-label">Client</div><select class="f-input" id="l-cli" onchange="updPrev()">${co}</select></div>
       <div class="f-group"><div class="f-label">Complexity</div>
-        <select class="f-input" id="l-cmp" onchange="updPrev()"><option>Simple</option><option>Medium</option><option>Complex</option></select>
+        <select class="f-input" id="l-cmp" onchange="updPrev()">${cmps}</select>
       </div>
     </div>
-    <div class="f-group"><div class="f-label">File / task name</div><input class="f-input" id="l-task" placeholder="e.g. Contract review — Section 4"></div>
+    <div class="f-group"><div class="f-label">File / task name</div><input class="f-input" id="l-task" value="${e&&e.task?e.task.replace(/"/g,'&quot;'):''}" placeholder="e.g. Contract review — Section 4"></div>
     <div class="f-row">
-      <div class="f-group"><div class="f-label">Pages</div><input class="f-input" id="l-pages" type="number" min="0" placeholder="0" oninput="updPrev()"></div>
-      <div class="f-group"><div class="f-label">Override rate (₹/pg) — optional</div><input class="f-input" id="l-rate" type="number" placeholder="Auto from matrix" oninput="updPrev()"></div>
+      <div class="f-group"><div class="f-label">Pages</div><input class="f-input" id="l-pages" type="number" min="0" value="${e?e.pages||'':''}" placeholder="0" oninput="updPrev()"></div>
+      <div class="f-group"><div class="f-label">Override rate (₹/pg) — optional</div><input class="f-input" id="l-rate" type="number" value="${e&&e.override_rate!=null?e.override_rate:''}" placeholder="Auto from matrix" oninput="updPrev()"></div>
     </div>
     <div id="l-special-block" style="display:none;margin-bottom:14px">
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--text2)">
-        <input type="checkbox" id="l-special" onchange="updPrev()" style="width:16px;height:16px;accent-color:var(--accent)">
+        <input type="checkbox" id="l-special" ${e&&e.is_special_rate?'checked':''} onchange="updPrev()" style="width:16px;height:16px;accent-color:var(--accent)">
         <span id="l-special-label">Complex / Form file — use special rate</span>
       </label>
     </div>
     <div id="l-prev" class="preview-box" style="display:none"></div>
     <div class="modal-footer">
       <button class="btn" onclick="closeM()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveLog()">Add entry</button>
+      <button class="btn btn-primary" onclick="saveLog('${id||''}')">${id?'Save changes':'Add entry'}</button>
     </div>`);
   onLogResChange();
 };
@@ -1106,7 +1142,7 @@ window.onLogResChange = function() {
       `Complex / Form file — use special rate (${fmt(r.special_cost)}/pg instead of ${fmt(r.cost)}/pg)`;
   } else {
     block.style.display='none';
-    const cb=document.getElementById('l-special'); if(cb) cb.checked=false;
+    const cb=document.getElementById('l-special'); if(cb && !(r&&r.type==='Freelancer')) cb.checked=false;
   }
   updPrev();
 };
@@ -1135,7 +1171,7 @@ window.updPrev = function() {
     <div><div class="prev-lbl">Profit</div><div style="color:${pf>=0?'var(--green)':'var(--red)'};font-weight:700">${fmt(pf)}</div></div>
     ${r?.type==='Freelancer'&&!pgs?'<div style="align-self:center;font-size:11px;color:var(--text3);font-family:var(--font)">No pages → no freelancer cost</div>':''}`;
 };
-window.saveLog = async function() {
+window.saveLog = async function(id) {
   const date=document.getElementById('l-date').value;
   const resource_id=document.getElementById('l-res').value;
   const client_id=document.getElementById('l-cli').value;
@@ -1147,8 +1183,10 @@ window.saveLog = async function() {
   const is_special_rate=document.getElementById('l-special')?.checked||false;
   if(!date){alert('Date required');return;}
   try {
-    await sbPost('worklog',{date,resource_id,client_id,complexity,task,pages,override_rate,is_special_rate});
-    await loadAll(); closeM(); render(); toast('Entry added ✓');
+    const payload={date,resource_id,client_id,complexity,task,pages,override_rate,is_special_rate};
+    if(id){ await sbPatch(`worklog?id=eq.${id}`,payload); }
+    else  { await sbPost('worklog',payload); }
+    await loadAll(); closeM(); render(); toast(id?'Entry updated ✓':'Entry added ✓');
   } catch(e){ alert('Error: '+e.message); }
 };
 window.delLog = async function(id) {
@@ -1160,21 +1198,90 @@ window.delLog = async function(id) {
 // ── DAILY VIEW ────────────────────────────────────────────
 function renderDaily() {
   const days=dim(curY,curM), cont=document.getElementById('daily-body');
-  const dateMap={};
-  for(let d=1;d<=days;d++){
-    const ds=`${curY}-${String(curM).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const ents=S.log.filter(e=>e.date===ds);
-    if(ents.length) dateMap[ds]=ents;
-  }
-  if(!Object.keys(dateMap).length){
-    cont.innerHTML=`<div class="empty"><div class="empty-ico">☀</div><div class="empty-txt">No entries for ${MONTHS[curM-1]} ${curY}.<br>Switch month or add entries in Work log.</div></div>`;
-    return;
-  }
-  cont.innerHTML=Object.keys(dateMap).sort((a,b)=>b.localeCompare(a)).map(ds=>{
-    const ents=dateMap[ds];
-    const dRv=ents.reduce((s,e)=>s+calcRev(e),0), dCs=ents.reduce((s,e)=>s+calcCost(e),0), dPf=dRv-dCs;
-    const dPg=ents.reduce((s,e)=>s+(e.pages||0),0);
-    const dl=new Date(ds+'T00:00:00').toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});
+  const employees = S.resources.filter(r=>r.type==='Employee');
+  const dayKeys=[];
+  for(let d=1;d<=days;d++) dayKeys.push(d);
+
+  cont.innerHTML = dayKeys.map(d=>{
+    const ds=`${curY}-${pad2(curM)}-${pad2(d)}`;
+    const isSun = new Date(curY,curM-1,d).getDay()===0;
+    const hol = S.holidays[holidayKey(curY,curM,d)];
+    const dl = new Date(ds+'T00:00:00').toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short'});
+
+    if(isSun||hol){
+      const label = isSun ? 'Sunday' : (hol.name||'Public holiday');
+      return `<div class="day-card">
+        <div class="day-hd" style="border-bottom:none">
+          <div class="day-date">${dl}</div>
+          <div><span class="badge b-Hol">Holiday — ${label}</span></div>
+        </div>
+      </div>`;
+    }
+
+    const entries = S.log.filter(e=>e.date===ds);
+    const rows=[];
+
+    // Employees always shown, even with zero files that day
+    employees.forEach(r=>{
+      const rEnts = entries.filter(e=>e.resource_id===r.id);
+      const attStatus = S.attendance[attK(r.id,curY,curM,d)]?.status||'';
+      const daily = dailyCostFor(r,curY,curM);
+      const cost = attStatus==='P'?daily : attStatus==='HF'?daily*0.5 : 0;
+      const pages = rEnts.reduce((s,e)=>s+(e.pages||0),0);
+      const revenue = rEnts.reduce((s,e)=>s+calcRev(e),0);
+      rows.push({r,rEnts,pages,revenue,cost,attStatus});
+    });
+
+    // Freelancers only shown if they have entries that day (no attendance concept for them)
+    const frlIds=[...new Set(entries.filter(e=>{
+      const r=S.resources.find(x=>x.id===e.resource_id); return r&&r.type==='Freelancer';
+    }).map(e=>e.resource_id))];
+    frlIds.forEach(rid=>{
+      const r=S.resources.find(x=>x.id===rid);
+      const rEnts = entries.filter(e=>e.resource_id===rid);
+      const pages = rEnts.reduce((s,e)=>s+(e.pages||0),0);
+      const revenue = rEnts.reduce((s,e)=>s+calcRev(e),0);
+      const cost = rEnts.reduce((s,e)=>s+calcCost(e),0);
+      rows.push({r,rEnts,pages,revenue,cost,attStatus:null});
+    });
+
+    const dRv=rows.reduce((s,x)=>s+x.revenue,0), dCs=rows.reduce((s,x)=>s+x.cost,0), dPf=dRv-dCs;
+    const dPg=rows.reduce((s,x)=>s+x.pages,0);
+
+    const bodyRows = rows.map(({r,rEnts,pages,revenue,cost,attStatus})=>{
+      const pf=revenue-cost;
+      let clientLbl, cmpLbl, taskLbl;
+      if(rEnts.length===0){
+        clientLbl='—'; cmpLbl='<span style="color:var(--text3)">—</span>';
+        taskLbl = r.type==='Employee' ? '<span style="color:var(--text3)">No file assigned</span>' : '—';
+      } else if(rEnts.length===1){
+        const c=S.clients.find(x=>x.id===rEnts[0].client_id);
+        clientLbl=c?.name||'—';
+        const bc=rEnts[0].complexity==='Simple'?'b-sim':rEnts[0].complexity==='Medium'?'b-med':'b-cmp';
+        cmpLbl=`<span class="badge ${bc}">${rEnts[0].complexity}</span>`;
+        taskLbl=`${rEnts[0].task||'—'}${rEnts[0].is_special_rate?' <span class="badge b-Hol" style="padding:1px 6px" title="Special rate applied">★</span>':''}`;
+      } else {
+        const distinctClients=[...new Set(rEnts.map(e=>e.client_id))];
+        clientLbl = distinctClients.length===1 ? (S.clients.find(x=>x.id===distinctClients[0])?.name||'—') : `${distinctClients.length} clients`;
+        const distinctCmp=[...new Set(rEnts.map(e=>e.complexity))];
+        cmpLbl = distinctCmp.length===1 ? `<span class="badge ${distinctCmp[0]==='Simple'?'b-sim':distinctCmp[0]==='Medium'?'b-med':'b-cmp'}">${distinctCmp[0]}</span>` : `<span class="badge" style="background:var(--bg4);color:var(--text2)">Mixed</span>`;
+        const names=rEnts.map(e=>e.task||'(untitled)').join(', ');
+        taskLbl=`<span title="${names}">${rEnts.length} files</span>`;
+      }
+      const attBadge = r.type==='Employee' ? (attStatus?`<span class="badge ${attStatus==='P'?'b-P':attStatus==='A'?'b-A':'b-HF'}" style="margin-left:6px">${attStatus}</span>`:'<span class="badge" style="background:var(--bg4);color:var(--text3);margin-left:6px">—</span>') : '';
+      return `<tr>
+        <td class="td-main">${r.name}${attBadge}</td>
+        <td><span class="badge ${r.type==='Employee'?'b-emp':'b-frl'}">${r.type}</span></td>
+        <td>${clientLbl}</td>
+        <td>${cmpLbl}</td>
+        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text3)">${taskLbl}</td>
+        <td class="td-mono">${pages||0}</td>
+        <td class="td-mono" style="color:var(--green)">${fmt(revenue)}</td>
+        <td class="td-mono" style="color:var(--red)">${fmt(cost)}</td>
+        <td class="td-mono" style="color:${pf>=0?'var(--green)':'var(--red)'};font-weight:700">${fmt(pf)}</td>
+      </tr>`;
+    }).join('');
+
     return `<div class="day-card">
       <div class="day-hd">
         <div class="day-date">${dl}</div>
@@ -1186,23 +1293,7 @@ function renderDaily() {
         </div>
       </div>
       <div class="t-wrap"><table><thead><tr><th>Resource</th><th>Type</th><th>Client</th><th>Complexity</th><th>Task</th><th>Pages</th><th>Revenue</th><th>Cost</th><th>Profit</th></tr></thead>
-      <tbody>${ents.map(e=>{
-        const r=S.resources.find(x=>x.id===e.resource_id);
-        const c=S.clients.find(x=>x.id===e.client_id);
-        const rv=calcRev(e),cs=calcCost(e),pf=rv-cs;
-        const bc=e.complexity==='Simple'?'b-sim':e.complexity==='Medium'?'b-med':'b-cmp';
-        return `<tr>
-          <td class="td-main">${r?.name||'—'}</td>
-          <td><span class="badge ${r?.type==='Employee'?'b-emp':'b-frl'}">${r?.type||'—'}</span></td>
-          <td>${c?.name||'—'}</td>
-          <td><span class="badge ${bc}">${e.complexity}</span></td>
-          <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text3)">${e.task||'—'}${e.is_special_rate?' <span class="badge b-Hol" style="padding:1px 6px" title="Special rate applied">★</span>':''}</td>
-          <td class="td-mono">${e.pages||0}</td>
-          <td class="td-mono" style="color:var(--green)">${fmt(rv)}</td>
-          <td class="td-mono" style="color:var(--red)">${fmt(cs)}</td>
-          <td class="td-mono" style="color:${pf>=0?'var(--green)':'var(--red)'};font-weight:700">${fmt(pf)}</td>
-        </tr>`;
-      }).join('')}</tbody></table></div>
+      <tbody>${bodyRows || `<tr><td colspan="9"><div class="empty" style="padding:20px"><div class="empty-txt">No employees or freelancer entries for this day.</div></div></td></tr>`}</tbody></table></div>
     </div>`;
   }).join('');
 }
@@ -1273,6 +1364,68 @@ function renderMonthly() {
           <td style="min-width:80px"><div style="font-size:11px;color:var(--text3)">${pct}%</div><div class="pbar"><div class="pbar-fill" style="width:${pct}%;background:var(--accent)"></div></div></td>
         </tr>`;
       }).join('');
+}
+
+// ── LEAVE SUMMARY ─────────────────────────────────────────
+function leaveDaysForMonth(r,y,m){
+  const days=dim(y,m);
+  let absent=0, half=0;
+  for(let d=1; d<=days; d++){
+    const isSun = new Date(y,m-1,d).getDay()===0;
+    const hol = S.holidays[holidayKey(y,m,d)];
+    if(isSun||hol) continue; // not a working day, doesn't count as leave
+    const st = S.attendance[attK(r.id,y,m,d)]?.status;
+    if(st==='A') absent++;
+    else if(st==='HF') half++;
+  }
+  return absent + half*0.5;
+}
+
+function renderLeaves(){
+  const y = curY;
+  document.getElementById('lv-year-label').textContent = y;
+  const employees = S.resources.filter(r=>r.type==='Employee');
+
+  // Monthly breakdown table: rows = employees, cols = Jan..Dec
+  const thead = document.querySelector('#lv-month-table thead');
+  thead.innerHTML = `<tr><th>Employee</th>${MONTHS.map(m=>`<th>${m.slice(0,3)}</th>`).join('')}<th>Total</th></tr>`;
+
+  const tb = document.getElementById('lv-month-tb');
+  if(!employees.length){
+    tb.innerHTML = `<tr><td colspan="14"><div class="empty"><div class="empty-ico">🌴</div><div class="empty-txt">No employees yet.</div></div></td></tr>`;
+    document.getElementById('lv-q-tb').innerHTML = '';
+    return;
+  }
+
+  tb.innerHTML = employees.map(r=>{
+    const monthVals = [];
+    for(let m=1;m<=12;m++) monthVals.push(leaveDaysForMonth(r,y,m));
+    const yearTotal = monthVals.reduce((s,v)=>s+v,0);
+    return `<tr>
+      <td class="td-main">${r.name}</td>
+      ${monthVals.map(v=>`<td class="td-mono" style="text-align:center">${v>0?v:'<span style="color:var(--text3)">—</span>'}</td>`).join('')}
+      <td class="td-mono" style="font-weight:700;text-align:center">${yearTotal}</td>
+    </tr>`;
+  }).join('');
+
+  // Quarterly + yearly table
+  document.getElementById('lv-q-tb').innerHTML = employees.map(r=>{
+    const monthVals=[];
+    for(let m=1;m<=12;m++) monthVals.push(leaveDaysForMonth(r,y,m));
+    const q1=monthVals.slice(0,3).reduce((s,v)=>s+v,0);
+    const q2=monthVals.slice(3,6).reduce((s,v)=>s+v,0);
+    const q3=monthVals.slice(6,9).reduce((s,v)=>s+v,0);
+    const q4=monthVals.slice(9,12).reduce((s,v)=>s+v,0);
+    const total=q1+q2+q3+q4;
+    return `<tr>
+      <td class="td-main">${r.name}</td>
+      <td class="td-mono" style="text-align:center">${q1}</td>
+      <td class="td-mono" style="text-align:center">${q2}</td>
+      <td class="td-mono" style="text-align:center">${q3}</td>
+      <td class="td-mono" style="text-align:center">${q4}</td>
+      <td class="td-mono" style="font-weight:700;text-align:center">${total}</td>
+    </tr>`;
+  }).join('');
 }
 
 // ── Modal ─────────────────────────────────────────────────
