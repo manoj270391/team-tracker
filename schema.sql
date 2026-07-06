@@ -4,12 +4,14 @@
 -- ─────────────────────────────────────────────
 
 create table if not exists resources (
-  id          uuid primary key default gen_random_uuid(),
-  name        text not null,
-  role        text,
-  type        text not null check (type in ('Employee','Freelancer')),
-  cost        numeric not null default 0,
-  created_at  timestamptz default now()
+  id              uuid primary key default gen_random_uuid(),
+  name            text not null,
+  role            text,
+  type            text not null check (type in ('Employee','Freelancer')),
+  cost            numeric not null default 0,       -- Employee: daily cost (if salary_type='daily') | Freelancer: cost per page
+  salary_type     text not null default 'daily' check (salary_type in ('daily','monthly')),
+  monthly_salary  numeric,                            -- Employee only, used when salary_type='monthly'
+  created_at      timestamptz default now()
 );
 
 create table if not exists clients (
@@ -43,14 +45,31 @@ create table if not exists worklog (
   created_at     timestamptz default now()
 );
 
+create table if not exists holidays (
+  id      uuid primary key default gen_random_uuid(),
+  year    int not null,
+  month   int not null,
+  day     int not null,
+  name    text,
+  unique(year, month, day)
+);
+
 -- Enable Row Level Security (keep data private)
 alter table resources  enable row level security;
 alter table clients    enable row level security;
 alter table attendance enable row level security;
 alter table worklog    enable row level security;
+alter table holidays   enable row level security;
 
 -- Allow all operations for now (tighten after adding auth)
 create policy "public access" on resources  for all using (true) with check (true);
 create policy "public access" on clients    for all using (true) with check (true);
 create policy "public access" on attendance for all using (true) with check (true);
 create policy "public access" on worklog    for all using (true) with check (true);
+create policy "public access" on holidays   for all using (true) with check (true);
+
+-- Grant table-level access to the anon role (required for the app's API key to work)
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on all tables in schema public to anon, authenticated;
+grant usage, select on all sequences in schema public to anon, authenticated;
+alter default privileges in schema public grant select, insert, update, delete on tables to anon, authenticated;

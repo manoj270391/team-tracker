@@ -392,6 +392,7 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
         <div class="sb-section-label">Setup</div>
         <button class="sb-item" onclick="nav('resources')" data-p="resources"><span class="sb-icon">👥</span>Resources</button>
         <button class="sb-item" onclick="nav('clients')" data-p="clients"><span class="sb-icon">🏢</span>Clients</button>
+        <button class="sb-item" onclick="nav('holidays')" data-p="holidays"><span class="sb-icon">🎌</span>Holidays</button>
       </div>
     </nav>
 
@@ -468,6 +469,27 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
         <div class="card"><div class="card-body" style="padding:14px 20px"><div class="att-wrap"><div id="att-grid"></div></div></div></div>
       </div>
 
+      <!-- HOLIDAYS -->
+      <div id="p-holidays" class="page">
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-body" style="padding:11px 20px">
+            <div style="display:flex;gap:18px;font-size:12px;color:var(--text3);flex-wrap:wrap;align-items:center">
+              <strong style="color:var(--text2)">Key:</strong>
+              <span><span class="badge b-L" style="background:rgba(139,150,176,.18)">Sun</span> Sunday — auto-holiday, no need to mark</span>
+              <span><span class="badge" style="background:var(--purplet);color:var(--purple)">Hol</span> Public / govt holiday — click to add</span>
+              <span style="color:var(--text3)">· Click any weekday to toggle a holiday for the whole team</span>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Working days this month</div></div>
+          <div class="card-body">
+            <div id="hol-summary" style="margin-bottom:16px"></div>
+            <div class="att-wrap"><div id="hol-grid"></div></div>
+          </div>
+        </div>
+      </div>
+
       <!-- WORK LOG -->
       <div id="p-worklog" class="page">
         <div class="card">
@@ -512,7 +534,7 @@ const MONTHS = ["January","February","March","April","May","June","July","August
 const STATUSES = ["","P","A","H","L"];
 const now = new Date();
 let SB_URL = '', SB_KEY = '';
-let S = { resources:[], clients:[], attendance:{}, log:[] };
+let S = { resources:[], clients:[], attendance:{}, log:[], holidays:{} };
 let cRes=null, cCli=null;
 let curM = now.getMonth()+1, curY = now.getFullYear();
 
@@ -523,8 +545,36 @@ const dim   = (y,m) => new Date(y,m,0).getDate();
 const attK  = (rid,y,m,d) => `${rid}_${y}_${m}_${d}`;
 
 function getRate(cid,cmp){ const c=S.clients.find(x=>x.id===cid); if(!c)return 0; return cmp==='Simple'?c.simple:cmp==='Medium'?c.medium:c.complex; }
-function calcCost(e){ const r=S.resources.find(x=>x.id===e.resource_id); if(!r)return 0; return r.type==='Employee'?r.cost:(e.pages||0)*r.cost; }
 function calcRev(e){ const rate=e.override_rate||getRate(e.client_id,e.complexity); return (e.pages||0)*rate; }
+
+// Working days in a given month = total days − Sundays − holidays (deduped)
+function holidayKey(y,m,d){ return `${y}_${m}_${d}`; }
+function workingDaysInMonth(y,m){
+  const days=dim(y,m);
+  let nonWorking=0;
+  for(let d=1; d<=days; d++){
+    const isSunday = new Date(y,m-1,d).getDay()===0;
+    const isHoliday = !!S.holidays[holidayKey(y,m,d)];
+    if(isSunday||isHoliday) nonWorking++;
+  }
+  return Math.max(1, days-nonWorking); // guard divide-by-zero
+}
+// Per-day cost for an Employee in a given month, based on salary_type
+function dailyCostFor(r,y,m){
+  if(r.salary_type==='monthly' && r.monthly_salary){
+    return r.monthly_salary / workingDaysInMonth(y,m);
+  }
+  return r.cost||0; // flat daily cost fallback
+}
+function calcCost(e){
+  const r=S.resources.find(x=>x.id===e.resource_id);
+  if(!r)return 0;
+  if(r.type==='Employee'){
+    const [y,m]=e.date.split('-').map(Number);
+    return dailyCostFor(r,y,m);
+  }
+  return (e.pages||0)*r.cost;
+}
 
 // ── Supabase fetch wrappers ───────────────────────────────
 async function sbFetch(path, opts={}) {
@@ -586,17 +636,20 @@ async function launchApp() {
 }
 
 async function loadAll() {
-  const [res,cli,att,log] = await Promise.all([
+  const [res,cli,att,log,hol] = await Promise.all([
     sbGet('resources?order=created_at.asc'),
     sbGet('clients?order=created_at.asc'),
     sbGet('attendance?order=year.asc,month.asc,day.asc'),
-    sbGet('worklog?order=date.desc,created_at.desc')
+    sbGet('worklog?order=date.desc,created_at.desc'),
+    sbGet('holidays?order=year.asc,month.asc,day.asc')
   ]);
   S.resources = res||[];
   S.clients   = cli||[];
   S.attendance = {};
   (att||[]).forEach(a=>{ S.attendance[attK(a.resource_id,a.year,a.month,a.day)] = a; });
   S.log = log||[];
+  S.holidays = {};
+  (hol||[]).forEach(h=>{ S.holidays[holidayKey(h.year,h.month,h.day)] = h; });
 }
 
 function setDbStatus(s) {
@@ -607,7 +660,7 @@ function setDbStatus(s) {
 }
 
 // ── Nav ───────────────────────────────────────────────────
-const PAGE_TITLES = {dashboard:'Dashboard',resources:'Resources',clients:'Clients',attendance:'Attendance',worklog:'Work log',daily:'Daily view',monthly:'Monthly summary'};
+const PAGE_TITLES = {dashboard:'Dashboard',resources:'Resources',clients:'Clients',attendance:'Attendance',worklog:'Work log',daily:'Daily view',monthly:'Monthly summary',holidays:'Holidays'};
 
 window.nav = function(p) {
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
@@ -623,7 +676,7 @@ window.nav = function(p) {
   if(p==='resources'){ btn.style.display='flex'; btn.textContent='+ Add resource'; btn.onclick=()=>openResModal(); }
   if(p==='clients')  { btn.style.display='flex'; btn.textContent='+ Add client';   btn.onclick=()=>openCliModal(); }
   if(p==='worklog')  { btn.style.display='flex'; btn.textContent='+ Add entry';    btn.onclick=()=>openLogModal(); }
-  if(['attendance','daily','monthly'].includes(p)) mp.style.display='flex';
+  if(['attendance','daily','monthly','holidays'].includes(p)) mp.style.display='flex';
 
   render(p);
 };
@@ -637,6 +690,7 @@ function render(p) {
   if(p==='worklog')    renderLog();
   if(p==='daily')      renderDaily();
   if(p==='monthly')    renderMonthly();
+  if(p==='holidays')   renderHolidays();
 }
 
 // ── Month pickers ─────────────────────────────────────────
@@ -684,53 +738,125 @@ function renderDash() {
 function renderRes() {
   document.getElementById('r-tb').innerHTML = !S.resources.length
     ? `<tr><td colspan="5"><div class="empty"><div class="empty-ico">👥</div><div class="empty-txt">No resources yet. Click + Add resource.</div></div></td></tr>`
-    : S.resources.map(r=>`<tr>
+    : S.resources.map(r=>{
+        let costLabel;
+        if(r.type==='Employee' && r.salary_type==='monthly'){
+          const perDay = dailyCostFor(r,curY,curM);
+          costLabel = `${fmt(r.monthly_salary)}/mo <span style="color:var(--text3)">(≈ ${fmt(perDay)}/day this month)</span>`;
+        } else if(r.type==='Employee'){
+          costLabel = fmt(r.cost)+'/day';
+        } else {
+          costLabel = fmt(r.cost)+'/page';
+        }
+        return `<tr>
         <td class="td-main">${r.name}</td>
         <td>${r.role||'—'}</td>
         <td><span class="badge ${r.type==='Employee'?'b-emp':'b-frl'}">${r.type==='Employee'?'👔':'🧑‍💻'} ${r.type}</span></td>
-        <td class="td-mono">${r.type==='Employee'?fmt(r.cost)+'/day':fmt(r.cost)+'/page'}</td>
+        <td class="td-mono">${costLabel}</td>
         <td><div style="display:flex;gap:6px">
           <button class="btn btn-ghost btn-sm" onclick="openResModal('${r.id}')">Edit</button>
           <button class="btn btn-danger btn-sm" onclick="delRes('${r.id}')">Delete</button>
         </div></td>
-      </tr>`).join('');
+      </tr>`;
+      }).join('');
 }
 
 window.openResModal = function(id) {
   const r = id ? S.resources.find(x=>x.id===id) : {};
+  const type = r.type || 'Employee';
+  const salaryType = r.salary_type || 'daily';
   showM(`<div class="modal-title">${id?'Edit':'Add'} resource</div>
     <div class="f-row">
       <div class="f-group"><div class="f-label">Full name</div><input class="f-input" id="r-name" value="${r.name||''}" placeholder="Alice Sharma"></div>
       <div class="f-group"><div class="f-label">Role / designation</div><input class="f-input" id="r-role" value="${r.role||''}" placeholder="Senior QA"></div>
     </div>
-    <div class="f-row">
-      <div class="f-group"><div class="f-label">Type</div>
-        <select class="f-input" id="r-type" onchange="updCL()">
-          <option ${(!r.type||r.type==='Employee')?'selected':''}>Employee</option>
-          <option ${r.type==='Freelancer'?'selected':''}>Freelancer</option>
+    <div class="f-group"><div class="f-label">Type</div>
+      <select class="f-input" id="r-type" onchange="onResTypeChange()">
+        <option value="Employee" ${type==='Employee'?'selected':''}>Employee</option>
+        <option value="Freelancer" ${type==='Freelancer'?'selected':''}>Freelancer</option>
+      </select>
+    </div>
+
+    <div id="r-emp-block" style="display:${type==='Employee'?'block':'none'}">
+      <div class="f-group">
+        <div class="f-label">How is pay calculated?</div>
+        <select class="f-input" id="r-salary-type" onchange="onSalaryTypeChange()">
+          <option value="daily" ${salaryType==='daily'?'selected':''}>Fixed daily rate</option>
+          <option value="monthly" ${salaryType==='monthly'?'selected':''}>Monthly salary (auto-calculate per-day cost)</option>
         </select>
       </div>
-      <div class="f-group"><div class="f-label" id="r-cl">${r.type==='Freelancer'?'Cost/page (₹)':'Daily cost (₹)'}</div>
-        <input class="f-input" id="r-cost" type="number" value="${r.cost||''}" placeholder="Amount">
+      <div id="r-daily-block" style="display:${salaryType==='daily'?'block':'none'}">
+        <div class="f-group"><div class="f-label">Daily cost (₹)</div><input class="f-input" id="r-cost-daily" type="number" value="${salaryType==='daily'?(r.cost||''):''}" placeholder="e.g. 2200"></div>
+      </div>
+      <div id="r-monthly-block" style="display:${salaryType==='monthly'?'block':'none'}">
+        <div class="f-group"><div class="f-label">Monthly salary (₹)</div><input class="f-input" id="r-monthly-salary" type="number" value="${r.monthly_salary||''}" placeholder="e.g. 45000" oninput="updSalaryPreview()"></div>
+        <div id="r-salary-preview" class="preview-box" style="display:none"></div>
+        <div class="f-hint">Per-day cost = Monthly salary ÷ working days in that month. Sundays and holidays (set in the Holidays page) are automatically excluded — so cost is recalculated correctly for every month.</div>
       </div>
     </div>
-    <div class="info-box">👔 <strong>Employee</strong> — daily cost applies every day they're present, with or without files.<br>🧑‍💻 <strong>Freelancer</strong> — cost charged only per page assigned. No pages = ₹0 cost.</div>
+
+    <div id="r-frl-block" style="display:${type==='Freelancer'?'block':'none'}">
+      <div class="f-group"><div class="f-label">Cost per page (₹)</div><input class="f-input" id="r-cost-frl" type="number" value="${type==='Freelancer'?(r.cost||''):''}" placeholder="e.g. 30"></div>
+    </div>
+
+    <div class="info-box">👔 <strong>Employee</strong> — cost applies every day they're present, with or without files. Choose fixed daily rate, or enter a monthly salary and let the app work out the correct per-day figure for each month.<br>🧑‍💻 <strong>Freelancer</strong> — cost charged only per page assigned. No pages = ₹0 cost.</div>
+
     <div class="modal-footer">
       <button class="btn" onclick="closeM()">Cancel</button>
       <button class="btn btn-primary" onclick="saveRes('${id||''}')">Save resource</button>
     </div>`);
+  if(salaryType==='monthly') updSalaryPreview();
 };
-window.updCL = () => document.getElementById('r-cl').textContent = document.getElementById('r-type').value==='Freelancer'?'Cost/page (₹)':'Daily cost (₹)';
+
+window.onResTypeChange = function() {
+  const t=document.getElementById('r-type').value;
+  document.getElementById('r-emp-block').style.display = t==='Employee'?'block':'none';
+  document.getElementById('r-frl-block').style.display = t==='Freelancer'?'block':'none';
+};
+window.onSalaryTypeChange = function() {
+  const st=document.getElementById('r-salary-type').value;
+  document.getElementById('r-daily-block').style.display = st==='daily'?'block':'none';
+  document.getElementById('r-monthly-block').style.display = st==='monthly'?'block':'none';
+  if(st==='monthly') updSalaryPreview();
+};
+window.updSalaryPreview = function() {
+  const salary = parseFloat(document.getElementById('r-monthly-salary')?.value)||0;
+  const pv = document.getElementById('r-salary-preview');
+  if(!pv) return;
+  if(!salary){ pv.style.display='none'; return; }
+  const wd = workingDaysInMonth(curY,curM);
+  const perDay = salary/wd;
+  pv.style.display='flex';
+  pv.innerHTML = `
+    <div><div class="prev-lbl">${MONTHS[curM-1]} working days</div><div>${wd}</div></div>
+    <div><div class="prev-lbl">Per-day cost (this month)</div><div style="color:var(--accent);font-weight:700">${fmt(perDay)}</div></div>`;
+};
 
 window.saveRes = async function(id) {
   const name=document.getElementById('r-name').value.trim();
   const role=document.getElementById('r-role').value.trim();
   const type=document.getElementById('r-type').value;
-  const cost=parseFloat(document.getElementById('r-cost').value)||0;
   if(!name){alert('Name required');return;}
+
+  let cost=0, salary_type='daily', monthly_salary=null;
+  if(type==='Employee'){
+    salary_type = document.getElementById('r-salary-type').value;
+    if(salary_type==='monthly'){
+      monthly_salary = parseFloat(document.getElementById('r-monthly-salary').value)||0;
+      if(!monthly_salary){ alert('Enter a monthly salary'); return; }
+      cost = 0;
+    } else {
+      cost = parseFloat(document.getElementById('r-cost-daily').value)||0;
+    }
+  } else {
+    cost = parseFloat(document.getElementById('r-cost-frl').value)||0;
+    salary_type='daily'; monthly_salary=null;
+  }
+
   try {
-    if(id) { await sbPatch(`resources?id=eq.${id}`,{name,role,type,cost}); }
-    else   { await sbPost('resources',{name,role,type,cost}); }
+    const payload = {name,role,type,cost,salary_type,monthly_salary};
+    if(id) { await sbPatch(`resources?id=eq.${id}`,payload); }
+    else   { await sbPost('resources',payload); }
     await loadAll(); closeM(); render(); toast(id?'Resource updated':'Resource added');
   } catch(e){ alert('Error: '+e.message); }
 };
@@ -829,6 +955,59 @@ window.cycleAtt = async function(rid,y,m,d) {
   } catch(e){ alert('Error: '+e.message); }
 };
 
+// ── HOLIDAYS ──────────────────────────────────────────────
+function renderHolidays() {
+  const days=dim(curY,curM);
+  const wd = workingDaysInMonth(curY,curM);
+  let sundays=0, hols=0;
+  for(let d=1; d<=days; d++){
+    if(new Date(curY,curM-1,d).getDay()===0) sundays++;
+    else if(S.holidays[holidayKey(curY,curM,d)]) hols++;
+  }
+  document.getElementById('hol-summary').innerHTML = `
+    <div class="metrics" style="margin-bottom:0">
+      <div class="m-card" style="--c:var(--blue)"><div class="m-label">Days in month</div><div class="m-val" style="color:var(--blue)">${days}</div></div>
+      <div class="m-card" style="--c:var(--text2)"><div class="m-label">Sundays</div><div class="m-val" style="color:var(--text2)">${sundays}</div></div>
+      <div class="m-card" style="--c:var(--purple)"><div class="m-label">Other holidays</div><div class="m-val" style="color:var(--purple)">${hols}</div></div>
+      <div class="m-card" style="--c:var(--green)"><div class="m-label">Working days</div><div class="m-val" style="color:var(--green)">${wd}</div></div>
+    </div>`;
+
+  const cols=`repeat(${days},minmax(46px,1fr))`;
+  let html=`<div style="display:grid;grid-template-columns:${cols};gap:4px;min-width:max-content">`;
+  for(let d=1; d<=days; d++){
+    const isSun = new Date(curY,curM-1,d).getDay()===0;
+    const h = S.holidays[holidayKey(curY,curM,d)];
+    const dayLbl = new Date(curY,curM-1,d).toLocaleDateString('en-IN',{weekday:'short'});
+    let bg='var(--bg3)', bd='var(--border)', col='var(--text2)', label='';
+    if(isSun){ bg='rgba(139,150,176,.1)'; bd='rgba(139,150,176,.3)'; col='var(--text3)'; label='Sun'; }
+    else if(h){ bg='var(--purplet)'; bd='rgba(167,139,250,.4)'; col='var(--purple)'; label='Hol'; }
+    html+=`<div onclick="${isSun?'':`toggleHoliday(${curY},${curM},${d})`}"
+      style="border:1px solid ${bd};background:${bg};border-radius:7px;padding:6px 4px;text-align:center;cursor:${isSun?'default':'pointer'};transition:transform .1s"
+      title="${h?.name||(isSun?'Sunday (auto)':'Click to mark as holiday')}"
+      onmouseover="if(!${isSun})this.style.transform='scale(1.05)'" onmouseout="this.style.transform='none'">
+      <div style="font-size:9px;color:var(--text3);font-weight:700">${dayLbl}</div>
+      <div style="font-size:13px;font-weight:700;color:${col}">${d}</div>
+      <div style="font-size:8px;color:${col};font-weight:700;min-height:10px">${label}</div>
+    </div>`;
+  }
+  html+='</div>';
+  document.getElementById('hol-grid').innerHTML=html;
+}
+
+window.toggleHoliday = async function(y,m,d) {
+  const k=holidayKey(y,m,d);
+  const existing=S.holidays[k];
+  try {
+    if(existing){
+      await sbDelete(`holidays?year=eq.${y}&month=eq.${m}&day=eq.${d}`);
+    } else {
+      const name = prompt('Holiday name (optional):','') || null;
+      await sbPost('holidays',{year:y,month:m,day:d,name});
+    }
+    await loadAll(); renderHolidays();
+  } catch(e){ alert('Error: '+e.message); }
+};
+
 // ── WORK LOG ──────────────────────────────────────────────
 function renderLog() {
   const sorted=[...S.log].sort((a,b)=>b.date.localeCompare(a.date));
@@ -864,7 +1043,7 @@ window.openLogModal = function() {
   const co=S.clients.map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
   showM(`<div class="modal-title">Add work log entry</div>
     <div class="f-row">
-      <div class="f-group"><div class="f-label">Date</div><input class="f-input" id="l-date" type="date" value="${toDay()}"></div>
+      <div class="f-group"><div class="f-label">Date</div><input class="f-input" id="l-date" type="date" value="${toDay()}" onchange="updPrev()"></div>
       <div class="f-group"><div class="f-label">Resource</div><select class="f-input" id="l-res" onchange="updPrev()">${ro}</select></div>
     </div>
     <div class="f-row">
@@ -893,7 +1072,9 @@ window.updPrev = function() {
   const ov=parseFloat(document.getElementById('l-rate')?.value);
   const r=S.resources.find(x=>x.id===rid);
   const rate=isNaN(ov)?getRate(cid,cmp):ov;
-  const rv=pgs*rate, cs=r?(r.type==='Employee'?r.cost:pgs*r.cost):0, pf=rv-cs;
+  const dateVal=document.getElementById('l-date')?.value||toDay();
+  const [py,pm]=dateVal.split('-').map(Number);
+  const rv=pgs*rate, cs=r?(r.type==='Employee'?dailyCostFor(r,py,pm):pgs*r.cost):0, pf=rv-cs;
   const pv=document.getElementById('l-prev'); if(!pv)return;
   pv.style.display='flex';
   pv.innerHTML=`
@@ -982,7 +1163,7 @@ function renderMonthly() {
     const ents=S.log.filter(e=>{ const[ey,em]=e.date.split('-').map(Number); return e.resource_id===r.id&&ey===curY&&em===curM; });
     const pgs=ents.reduce((s,e)=>s+(e.pages||0),0);
     const rv=ents.reduce((s,e)=>s+calcRev(e),0);
-    const cs=r.type==='Employee'?pres*r.cost:ents.reduce((s,e)=>s+calcCost(e),0);
+    const cs=r.type==='Employee'?pres*dailyCostFor(r,curY,curM):ents.reduce((s,e)=>s+calcCost(e),0);
     const pf=rv-cs, mg=rv>0?pf/rv:0;
     return {r,pres,pgs,rv,cs,pf,mg};
   });
