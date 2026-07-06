@@ -29,7 +29,7 @@ create table if not exists attendance (
   year        int not null,
   month       int not null,
   day         int not null,
-  status      text not null check (status in ('P','A','H','L')),
+  status      text not null check (status in ('P','A','HF')),
   unique(resource_id, year, month, day)
 );
 
