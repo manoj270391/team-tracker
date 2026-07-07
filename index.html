@@ -689,8 +689,8 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script>
 // ── Globals ───────────────────────────────────────────────
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -2399,65 +2399,107 @@ window.savePayDate = async function(rid, y, m){
 // Opens a clean, standalone window with just the slip (white background, no app chrome),
 // so printing/"Save as PDF" can't be affected by the main app's modal/overlay layout at
 // all. Also sets the window title to control the suggested PDF filename.
+// Brand colors sampled directly from the company logo, so the PDF actually matches it.
+const BRAND_NAVY = [55, 73, 95];   // dark navy from the logo background
+const BRAND_GOLD = [216, 168, 58]; // gold/amber from "GLOBAL" lettering
+const BRAND_NAVY_TINT = [235, 239, 244]; // very light navy tint for header/total row backgrounds
+
 window.printSalarySlipPDF = async function(rid, y, m, btn){
   const d = salarySlipData(rid, y, m);
   const filename = `${d.r.name} Salary Slip - ${MONTHS[m-1]} ${y}`;
   const origLabel = btn ? btn.textContent : null;
   if(btn){ btn.disabled = true; btn.textContent = 'Generating PDF…'; }
 
-  const wrapper = document.createElement('div');
-  wrapper.style.cssText = 'position:fixed;left:-9999px;top:0;width:800px;';
-  wrapper.innerHTML = `<div class="pdf-slip-root">${salarySlipMarkup(d, false)}</div>
-    <style>
-      .pdf-slip-root { background:#fff; color:#1a1a1a; padding:28px; font-family:Arial,Helvetica,sans-serif; font-size:13px; }
-      .pdf-slip-root table { width:100%; border-collapse: collapse; }
-      .pdf-slip-root .slip-hd-tb td { vertical-align: middle; padding: 0 0 14px 0; border:none; }
-      .pdf-slip-root .slip-logo-cell { width: 130px; }
-      .pdf-slip-root .slip-company-name { font-size: 17px; font-weight: 700; }
-      .pdf-slip-root .slip-company-addr { font-size: 11.5px; color: #444; margin-top: 2px; }
-      .pdf-slip-root .slip-title { text-align:center; font-weight:700; font-size:14px; background:#eef1f5; padding:8px; border:1px solid #ccc; margin-bottom:14px; }
-      .pdf-slip-root .slip-info-tb { border:1px solid #ccc; margin-bottom:14px; }
-      .pdf-slip-root .slip-info-tb td { border:1px solid #ccc; padding:6px 10px; font-size:12.5px; }
-      .pdf-slip-root .slip-info-tb td.lbl { font-weight:700; background:#f7f8fa; width:20%; }
-      .pdf-slip-root .slip-ed-tb { border:1px solid #ccc; margin-bottom:14px; }
-      .pdf-slip-root .slip-ed-tb th { background:#eef1f5; border:1px solid #ccc; padding:7px 10px; text-align:left; font-size:12.5px; }
-      .pdf-slip-root .slip-ed-tb td { border:1px solid #ccc; padding:7px 10px; font-size:12.5px; }
-      .pdf-slip-root .slip-ed-tb td:nth-child(2), .pdf-slip-root .slip-ed-tb td:nth-child(4) { text-align:right; font-family: monospace; }
-      .pdf-slip-root .slip-ed-tb tr.tot td { font-weight:700; background:#f7f8fa; }
-      .pdf-slip-root .slip-net-tb { border:2px solid #333; margin-bottom:6px; }
-      .pdf-slip-root .slip-net-tb td { padding:12px; text-align:center; border:none; }
-      .pdf-slip-root .slip-net-amt { font-size:16px; font-weight:700; }
-      .pdf-slip-root .slip-net-words { font-size:12px; font-style:italic; color:#333; margin-top:4px; }
-      .pdf-slip-root .slip-footnote { text-align:center; font-size:11px; font-style:italic; color:#555; margin-top:10px; }
-    </style>`;
-  document.body.appendChild(wrapper);
-
   try {
-    const target = wrapper.querySelector('.pdf-slip-root');
-    const canvas = await html2canvas(target, { scale: 2, backgroundColor: '#ffffff' });
-    const imgData = canvas.toDataURL('image/png');
-
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
-    const pageWidth = pdf.internal.pageSize.getWidth();
-    const pageHeight = pdf.internal.pageSize.getHeight();
-    const margin = 20;
-    const maxWidth = pageWidth - margin*2;
-    const maxHeight = pageHeight - margin*2;
-    let imgWidth = maxWidth;
-    let imgHeight = (canvas.height * imgWidth) / canvas.width;
-    if(imgHeight > maxHeight){
-      const scaleDown = maxHeight / imgHeight;
-      imgHeight *= scaleDown;
-      imgWidth *= scaleDown;
-    }
-    pdf.addImage(imgData, 'PNG', margin, margin, imgWidth, imgHeight);
+    const pageW = pdf.internal.pageSize.getWidth();
+    const margin = 42;
+    const contentW = pageW - margin*2;
+    let cy = margin;
+
+    // ── Header: logo + company details ──
+    try { pdf.addImage(COMPANY.logo, 'JPEG', margin, cy, 118, 33); } catch{}
+    pdf.setTextColor(...BRAND_NAVY);
+    pdf.setFont('helvetica','bold'); pdf.setFontSize(15);
+    pdf.text(COMPANY.name, margin+130, cy+13);
+    pdf.setFont('helvetica','normal'); pdf.setFontSize(9); pdf.setTextColor(80,80,80);
+    pdf.text(COMPANY.address, margin+130, cy+27);
+    pdf.text(`${COMPANY.phone}  |  ${COMPANY.email}`, margin+130, cy+39);
+    cy += 50;
+    pdf.setDrawColor(...BRAND_GOLD); pdf.setLineWidth(2);
+    pdf.line(margin, cy, margin+contentW, cy);
+    cy += 20;
+
+    // ── Title bar ──
+    pdf.setFillColor(...BRAND_NAVY);
+    pdf.rect(margin, cy, contentW, 26, 'F');
+    pdf.setTextColor(255,255,255); pdf.setFont('helvetica','bold'); pdf.setFontSize(12);
+    pdf.text(`SALARY SLIP — ${MONTHS[m-1].toUpperCase()} ${y}`, pageW/2, cy+17, { align:'center' });
+    cy += 26 + 16;
+
+    // ── Info table ──
+    const payDateText = d.payDate ? new Date(d.payDate+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+    pdf.autoTable({
+      startY: cy, margin: { left: margin, right: margin },
+      theme: 'grid',
+      styles: { font:'helvetica', fontSize:9.5, cellPadding:6, lineColor:[210,210,210], lineWidth:0.75, textColor:[30,30,30] },
+      columnStyles: { 0:{fontStyle:'bold', textColor:BRAND_NAVY, fillColor:BRAND_NAVY_TINT, cellWidth:105}, 2:{fontStyle:'bold', textColor:BRAND_NAVY, fillColor:BRAND_NAVY_TINT, cellWidth:105} },
+      body: [
+        ['Employee Name', d.r.name, 'Employee ID', d.r.employee_code||'—'],
+        ['Designation', d.r.role||'—', 'Pay Period', `${MONTHS[m-1]} ${y}`],
+        ['Bank A/C No.', d.r.bank_last4?('XXXXXXXX'+d.r.bank_last4):'—', 'Pay Date', payDateText],
+        ['Days in Month', String(d.days), 'LOP Days', String(d.brk.totalLOPDays||0)],
+      ],
+    });
+    cy = pdf.lastAutoTable.finalY + 16;
+
+    // ── Earnings / Deductions table ──
+    const edBody = [
+      ['Basic Salary', fmt(d.split.basic), 'Professional Tax', d.pt>0?fmt(d.pt):'NIL'],
+      ['House Rent Allowance (HRA)', fmt(d.split.hra), 'TDS (Income Tax)', d.itApplicable?fmt(d.incomeTax):'NIL'],
+      ['Other Allowances', fmt(d.split.other), 'Loss of Pay (LOP)', d.lopDeduction>0?fmt(d.lopDeduction):'NIL'],
+    ];
+    if(d.elBonus>0) edBody.push([`EL Settlement (${y-1})`, fmt(d.elBonus), '', '']);
+    edBody.push(['Gross Earnings', fmt(d.gross), 'Total Deductions', fmt(d.totalDeductions)]);
+    const totalRowIdx = edBody.length - 1;
+
+    pdf.autoTable({
+      startY: cy, margin: { left: margin, right: margin },
+      theme: 'grid',
+      styles: { font:'helvetica', fontSize:9.5, cellPadding:6, lineColor:[210,210,210], lineWidth:0.75, textColor:[30,30,30] },
+      head: [['EARNINGS','Amount','DEDUCTIONS','Amount']],
+      headStyles: { fillColor:BRAND_NAVY, textColor:[255,255,255], fontStyle:'bold' },
+      columnStyles: { 1:{halign:'right', font:'courier'}, 3:{halign:'right', font:'courier'} },
+      body: edBody,
+      didParseCell: (data) => {
+        if(data.row.index===totalRowIdx && data.section==='body'){
+          data.cell.styles.fontStyle = 'bold';
+          data.cell.styles.fillColor = BRAND_NAVY_TINT;
+        }
+      },
+    });
+    cy = pdf.lastAutoTable.finalY + 18;
+
+    // ── Net pay box ──
+    const boxH = 52;
+    pdf.setDrawColor(...BRAND_NAVY); pdf.setLineWidth(1.5);
+    pdf.rect(margin, cy, contentW, boxH);
+    pdf.setTextColor(...BRAND_NAVY); pdf.setFont('helvetica','bold'); pdf.setFontSize(14);
+    pdf.text(`NET PAY   ₹ ${Math.round(d.net).toLocaleString('en-IN')}`, pageW/2, cy+24, { align:'center' });
+    pdf.setFont('helvetica','italic'); pdf.setFontSize(9.5); pdf.setTextColor(60,60,60);
+    pdf.text(`(Rupees ${numberToIndianWords(d.net)} Only)`, pageW/2, cy+40, { align:'center' });
+    cy += boxH + 20;
+
+    // ── Footnote ──
+    pdf.setFont('helvetica','italic'); pdf.setFontSize(8.5); pdf.setTextColor(100,100,100);
+    pdf.text('This is a computer-generated salary slip and does not require a signature.', pageW/2, cy, { align:'center' });
+
     pdf.setDisplayMode('100%', 'continuous', 'UseNone'); // open at 100% zoom by default
     pdf.save(`${filename}.pdf`);
   } catch(e) {
     alert('Could not generate PDF: '+e.message);
   } finally {
-    document.body.removeChild(wrapper);
     if(btn){ btn.disabled = false; btn.textContent = origLabel; }
   }
 };
