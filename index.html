@@ -679,7 +679,7 @@ function getISTDate(){
 }
 const now = getISTDate();
 let SB_URL = '', SB_KEY = '';
-let S = { resources:[], clients:[], attendance:{}, log:[], holidays:{}, elSettlements:[] };
+let S = { resources:[], clients:[], attendance:{}, log:[], holidays:{}, elSettlements:[], ptSlabs:[], payrollOverrides:{} };
 let cRes=null, cCli=null;
 let curM = now.getMonth()+1, curY = now.getFullYear();
 
@@ -710,6 +710,45 @@ function dailyCostFor(r,y,m){
     return r.monthly_salary / workingDaysInMonth(y,m);
   }
   return r.cost||0; // flat daily cost fallback
+}
+
+// ── SALARY BREAKUP + TAX ──────────────────────────────────
+// Basic 50% / HRA 30% / Other Allowances 20% of that month's gross earnings.
+function salaryBreakup(gross){
+  return {
+    basic: gross*0.50,
+    hra:   gross*0.30,
+    other: gross*0.20
+  };
+}
+
+// Annualized gross salary for an Employee (monthly-salaried only - daily/freelance
+// staff aren't in scope for income tax/PT gating here).
+function annualGrossFor(r){
+  if(r.salary_type==='monthly' && r.monthly_salary) return r.monthly_salary*12;
+  return 0;
+}
+
+// Income tax only applies once annualized salary crosses ₹12,00,000 (new-regime
+// rebate threshold) - below that, it's not applicable at all.
+function incomeTaxApplicable(r){
+  return annualGrossFor(r) > 1200000;
+}
+
+function incomeTaxOverrideFor(r,y,m){
+  return Number(S.payrollOverrides[r.id+'-'+y+'-'+m]?.income_tax || 0);
+}
+
+// Professional Tax (Tamil Nadu): looked up from the editable pt_slabs table based on
+// average half-yearly income, spread evenly across all 12 months per company preference
+// (statutory cycle is actually half-yearly, deducted only in Aug/Jan - see Leave Policy
+// page notes).
+function monthlyProfessionalTax(r){
+  const halfYearly = annualGrossFor(r)/2;
+  if(!halfYearly || !S.ptSlabs.length) return 0;
+  const slab = S.ptSlabs.find(s => halfYearly >= s.min_half_yearly && (s.max_half_yearly==null || halfYearly <= s.max_half_yearly));
+  if(!slab) return 0;
+  return Number(slab.half_yearly_amount)/6;
 }
 
 // ── LEAVE POLICY ENGINE ───────────────────────────────────
@@ -819,8 +858,11 @@ function leaveBalance(r, y, m){
 }
 
 // For salary slip: given month Y/M, work out how many of this month's CL/SL/EL
-// days should actually be paid vs converted to LOP because the balance ran out
-// (balance is consumed in calendar order, oldest first)
+// days should actually be paid vs converted to LOP.
+// POOLED POLICY: CL, SL and EL are drawn from as one combined pool - using more of
+// one type than its own individual balance is fine as long as the OTHER types still
+// have unused balance to cover it. LOP only kicks in once all three are exhausted
+// combined (not the moment any single type's own balance runs out).
 function monthLeaveBreakdown(r, y, m){
   const thisMonthCL = countLeaveType(r,'CL',y,m,y,m);
   const thisMonthSL = countLeaveType(r,'SL',y,m,y,m);
@@ -830,23 +872,25 @@ function monthLeaveBreakdown(r, y, m){
   const clEntThruMonth = clslEntitlementThroughMonth(r,y,m);
   const clUsedBeforeMonth = countLeaveType(r,'CL',y,m-1,y,1);
   const clAllowed = Math.max(0, clEntThruMonth - clUsedBeforeMonth);
-  const clOverflow = Math.max(0, thisMonthCL - clAllowed);
 
   const slEntThruMonth = clslEntitlementThroughMonth(r,y,m);
   const slUsedBeforeMonth = countLeaveType(r,'SL',y,m-1,y,1);
   const slAllowed = Math.max(0, slEntThruMonth - slUsedBeforeMonth);
-  const slOverflow = Math.max(0, thisMonthSL - slAllowed);
 
   const elEntThruMonth = Math.min(45, elEntitlementThroughMonth(r,y,m));
   const [py,pm] = m===1 ? [y-1,12] : [y,m-1];
   const elUsedBeforeMonth = countLeaveType(r,'EL',py,pm,null,null) + elSettledDaysUpTo(r, y-1);
   const elAllowed = Math.max(0, elEntThruMonth - elUsedBeforeMonth);
-  const elOverflow = Math.max(0, thisMonthEL - elAllowed);
 
-  const totalLOPDays = thisMonthLOP + clOverflow + slOverflow + elOverflow;
+  // Pool: combined remaining balance across all 3 types, vs. combined days taken this month.
+  const poolAllowed = clAllowed + slAllowed + elAllowed;
+  const poolUsedThisMonth = thisMonthCL + thisMonthSL + thisMonthEL;
+  const poolOverflow = Math.max(0, poolUsedThisMonth - poolAllowed);
+
+  const totalLOPDays = thisMonthLOP + poolOverflow;
   return {
     cl:thisMonthCL, sl:thisMonthSL, el:thisMonthEL, lopExplicit:thisMonthLOP,
-    clOverflow, slOverflow, elOverflow, totalLOPDays
+    poolAllowed, poolUsedThisMonth, poolOverflow, totalLOPDays
   };
 }
 
@@ -938,6 +982,22 @@ async function loadAll() {
   S.holidays = {};
   (hol||[]).forEach(h=>{ S.holidays[holidayKey(h.year,h.month,h.day)] = h; });
   S.elSettlements = settle||[];
+
+  // Fetched separately with a fallback: if migration_v10.sql hasn't been run yet on this
+  // project, these tables won't exist - that shouldn't be able to break the rest of the
+  // app's data loading the way a missing table did before.
+  try {
+    const [pt,pmo] = await Promise.all([
+      sbGet('pt_slabs?order=sort_order.asc'),
+      sbGet('payroll_month_overrides?order=year.asc,month.asc')
+    ]);
+    S.ptSlabs = pt||[];
+    S.payrollOverrides = {};
+    (pmo||[]).forEach(o=>{ S.payrollOverrides[o.resource_id+'-'+o.year+'-'+o.month] = o; });
+  } catch {
+    S.ptSlabs = [];
+    S.payrollOverrides = {};
+  }
 }
 
 function setDbStatus(s) {
@@ -2096,15 +2156,18 @@ function renderPayroll(){
       if(st==='P') present++;
       else if(st==='HF') half++;
     }
-    const brk = r.joining_date ? monthLeaveBreakdown(r,curY,curM) : {cl:0,sl:0,el:0,lopExplicit:0,clOverflow:0,slOverflow:0,elOverflow:0,totalLOPDays:0};
+    const brk = r.joining_date ? monthLeaveBreakdown(r,curY,curM) : {cl:0,sl:0,el:0,lopExplicit:0,poolAllowed:0,poolUsedThisMonth:0,poolOverflow:0,totalLOPDays:0};
     const baseGross = r.salary_type==='monthly' ? (r.monthly_salary||0) : dailyCostFor(r,curY,curM)*workingDaysInMonth(curY,curM);
     const perDay = dailyCostFor(r,curY,curM);
-    const deduction = brk.totalLOPDays * perDay;
+    const lopDeduction = brk.totalLOPDays * perDay;
+    const pt = monthlyProfessionalTax(r);
+    const incomeTax = incomeTaxApplicable(r) ? incomeTaxOverrideFor(r,curY,curM) : 0;
+    const deduction = lopDeduction + pt + incomeTax;
     // EL settlement bonus lands in February's payroll for the prior year's settlement
     const elBonus = (curM===2) ? Number(elSettlementRow(r,curY-1)?.amount||0) : 0;
     const gross = baseGross + elBonus;
     const net = gross - deduction;
-    return {r, present, half, brk, gross, elBonus, deduction, net, perDay};
+    return {r, present, half, brk, gross, elBonus, deduction, lopDeduction, pt, incomeTax, net, perDay};
   });
 
   const totGross = rows.reduce((s,x)=>s+x.gross,0);
@@ -2158,14 +2221,19 @@ window.openSalarySlip = function(rid){
     else if(st==='A') absentCount++;
   }
   const wd = workingDaysInMonth(y,m);
-  const brk = r.joining_date ? monthLeaveBreakdown(r,y,m) : {cl:0,sl:0,el:0,lopExplicit:0,clOverflow:0,slOverflow:0,elOverflow:0,totalLOPDays:0};
+  const brk = r.joining_date ? monthLeaveBreakdown(r,y,m) : {cl:0,sl:0,el:0,lopExplicit:0,poolAllowed:0,poolUsedThisMonth:0,poolOverflow:0,totalLOPDays:0};
   const bal = r.joining_date ? leaveBalance(r,y,m) : null;
   const baseGross = r.salary_type==='monthly' ? (r.monthly_salary||0) : dailyCostFor(r,y,m)*wd;
   const perDay = dailyCostFor(r,y,m);
   const elBonus = (m===2) ? Number(elSettlementRow(r,y-1)?.amount||0) : 0;
   const gross = baseGross + elBonus;
-  const deduction = brk.totalLOPDays * perDay;
-  const net = gross - deduction;
+  const split = salaryBreakup(baseGross);
+  const lopDeduction = brk.totalLOPDays * perDay;
+  const pt = monthlyProfessionalTax(r);
+  const itApplicable = incomeTaxApplicable(r);
+  const incomeTax = itApplicable ? incomeTaxOverrideFor(r,y,m) : 0;
+  const totalDeductions = lopDeduction + pt + incomeTax;
+  const net = gross + elBonus*0 - totalDeductions; // elBonus already folded into gross above
 
   showM(`
     <div id="slip-print-area">
@@ -2194,7 +2262,7 @@ window.openSalarySlip = function(rid){
         </div>
       </div>
       ${bal?`<div style="border-top:1px solid var(--border);padding-top:12px;margin-bottom:12px">
-        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Leave balance (as of this month)</div>
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Leave balance (as of this month) — pooled CL+SL+EL, LOP only once all three run out</div>
         <div class="f-row">
           <div><div class="prev-lbl">CL remaining</div><div class="td-mono">${bal.cl.remaining} / ${bal.cl.entitlement}</div></div>
           <div><div class="prev-lbl">SL remaining</div><div class="td-mono">${bal.sl.remaining} / ${bal.sl.entitlement}</div></div>
@@ -2203,11 +2271,29 @@ window.openSalarySlip = function(rid){
         </div>
       </div>`:''}
       <div style="border-top:1px solid var(--border);padding-top:12px">
-        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Earnings</div>
-        <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Base salary</span><span class="td-mono">${fmt(baseGross)}</span></div>
-        ${elBonus>0?`<div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px;color:var(--purple)"><span>🌴 EL Settlement (${y-1})</span><span class="td-mono">+${fmt(elBonus)}</span></div>`:''}
-        <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px;color:var(--red)"><span>Deduction (Loss of Pay)</span><span class="td-mono">-${fmt(deduction)}</span></div>
-        <div class="row" style="display:flex;justify-content:space-between;font-weight:700;font-size:15px;padding-top:8px;border-top:1px solid var(--border)"><span>Net pay</span><span class="td-mono" style="color:var(--green)">${fmt(net)}</span></div>
+        <div class="f-row" style="align-items:start">
+          <div style="flex:1">
+            <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Earnings</div>
+            <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Basic Salary (50%)</span><span class="td-mono">${fmt(split.basic)}</span></div>
+            <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px"><span>House Rent Allowance (30%)</span><span class="td-mono">${fmt(split.hra)}</span></div>
+            <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Other Allowances (20%)</span><span class="td-mono">${fmt(split.other)}</span></div>
+            ${elBonus>0?`<div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px;color:var(--purple)"><span>🌴 EL Settlement (${y-1})</span><span class="td-mono">+${fmt(elBonus)}</span></div>`:''}
+            <div class="row" style="display:flex;justify-content:space-between;font-weight:700;padding-top:6px;border-top:1px solid var(--border)"><span>Gross Earnings</span><span class="td-mono">${fmt(gross)}</span></div>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Deductions</div>
+            <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Professional Tax</span><span class="td-mono">${pt>0?fmt(pt):'NIL'}</span></div>
+            <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px;align-items:center">
+              <span>TDS (Income Tax)</span>
+              ${itApplicable
+                ? `<span style="display:flex;gap:6px;align-items:center"><input id="slip-it-input" type="number" min="0" value="${incomeTax}" class="f-input" style="width:100px;padding:4px 8px;font-size:12px"><button class="btn btn-ghost btn-sm" onclick="saveIncomeTax('${r.id}',${y},${m})">Save</button></span>`
+                : `<span class="td-mono">NIL <span style="color:var(--text3);font-size:11px">(under ₹12L/yr)</span></span>`}
+            </div>
+            <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Loss of Pay</span><span class="td-mono">${lopDeduction>0?fmt(lopDeduction):'NIL'}</span></div>
+            <div class="row" style="display:flex;justify-content:space-between;font-weight:700;padding-top:6px;border-top:1px solid var(--border)"><span>Total Deductions</span><span class="td-mono">${fmt(totalDeductions)}</span></div>
+          </div>
+        </div>
+        <div class="row" style="display:flex;justify-content:space-between;font-weight:700;font-size:15px;padding-top:12px;margin-top:8px;border-top:1px solid var(--border)"><span>Net Pay</span><span class="td-mono" style="color:var(--green)">${fmt(net)}</span></div>
       </div>
     </div>
     <div class="modal-footer">
@@ -2216,12 +2302,30 @@ window.openSalarySlip = function(rid){
     </div>`);
 };
 
+window.saveIncomeTax = async function(rid, y, m){
+  const val = Number(document.getElementById('slip-it-input').value) || 0;
+  try {
+    const existing = S.payrollOverrides[rid+'-'+y+'-'+m];
+    if(existing){
+      await sbPatch(`payroll_month_overrides?id=eq.${existing.id}`, { income_tax: val });
+    } else {
+      const [row] = await sbPost('payroll_month_overrides', { resource_id: rid, year: y, month: m, income_tax: val });
+      if(row) S.payrollOverrides[rid+'-'+y+'-'+m] = row;
+    }
+    if(existing) existing.income_tax = val;
+    openSalarySlip(rid); // refresh the slip with the new figure
+    renderPayroll();
+  } catch(e) {
+    alert('Could not save: '+e.message);
+  }
+};
+
 // ── LEAVE POLICY ──────────────────────────────────────────
 function renderPolicy(){
   const el = document.getElementById('policy-content');
-  if(el.dataset.rendered) return;
-  el.dataset.rendered = '1';
-  el.innerHTML = `
+  if(!el.dataset.rendered){
+    el.dataset.rendered = '1';
+    el.innerHTML = `
     <div style="text-align:center;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border)">
       <div style="font-size:18px;font-weight:700;color:var(--text)">Global Net Services</div>
       <div style="font-size:14px;color:var(--text2)">Employee Leave Policy</div>
@@ -2253,6 +2357,9 @@ function renderPolicy(){
     <h4 style="color:var(--text);font-size:13px;margin-bottom:6px">3.3 Earned Leave</h4>
     <p style="margin-bottom:16px">12 days/year, starting only after 12 months of continuous service. Fully paid. Carries forward up to 45 days; excess is encashed at current basic pay (January payroll). Remaining balance is encashed in full on exit.</p>
 
+    <h4 style="color:var(--text);font-size:13px;margin-bottom:6px">3.4 Loss of Pay (pooled policy)</h4>
+    <p style="margin-bottom:16px">CL, SL and EL are drawn from as one combined pool each month — using more of one type than its own individual balance is fine as long as the other two still have unused balance to cover it. Loss of Pay only applies once CL + SL + EL are <em>all</em> exhausted together, not the moment any single type's own balance runs out.</p>
+
     <h3 style="color:var(--text);font-size:14px;margin-bottom:8px">4. National &amp; Festival Holidays</h3>
     <p style="margin-bottom:16px">Paid holidays on dates notified annually by the Tamil Nadu Government — tracked in the Holidays page of this portal.</p>
 
@@ -2271,9 +2378,49 @@ function renderPolicy(){
     <h3 style="color:var(--text);font-size:14px;margin-bottom:8px">9. Leave Records</h3>
     <p style="margin-bottom:8px">A leave register recording CL, SL, and EL balances is maintained and updated monthly — see the Leave Summary page of this portal. Employees may request their balance at any time.</p>
 
+    <h3 style="color:var(--text);font-size:14px;margin-bottom:8px">10. Professional Tax (Tamil Nadu)</h3>
+    <p style="margin-bottom:10px">Deducted monthly (spread evenly across the year) based on average half-yearly income, per the slabs below. <strong>Verify these against the current official Greater Chennai Corporation notification periodically</strong> — rates are revised from time to time and are edited here rather than in code.</p>
+    <div id="pt-slabs-container" style="margin-bottom:16px"></div>
+
+    <h3 style="color:var(--text);font-size:14px;margin-bottom:8px">11. Income Tax (TDS)</h3>
+    <p style="margin-bottom:16px">Applies only once an employee's annualized salary (monthly salary × 12) crosses ₹12,00,000 — below that threshold, no income tax is deducted. Where applicable, the amount is entered manually each month on that employee's salary slip (View slip → Payroll page), rather than computed automatically.</p>
+
     <p style="font-size:11px;color:var(--text3);font-style:italic;margin-top:20px;padding-top:14px;border-top:1px solid var(--border)">This policy reflects statutory minimums under the Tamil Nadu Shops and Establishments Act, 1947, and may be updated to comply with future amendments to applicable law.</p>
   `;
+  }
+  renderPtSlabsTable();
 }
+
+function renderPtSlabsTable(){
+  const el = document.getElementById('pt-slabs-container');
+  if(!el) return;
+  if(!S.ptSlabs.length){
+    el.innerHTML = `<div style="font-size:12px;color:var(--text3);border:1px dashed var(--border);border-radius:var(--r-sm);padding:14px">No slabs loaded yet — run <code>migration_v10.sql</code> in Supabase to add the Professional Tax table.</div>`;
+    return;
+  }
+  el.innerHTML = `<div class="t-wrap"><table>
+    <thead><tr><th>Avg. half-yearly income (₹)</th><th>Half-yearly PT (₹)</th><th></th></tr></thead>
+    <tbody>
+    ${S.ptSlabs.map(s=>`<tr>
+      <td>${Number(s.min_half_yearly).toLocaleString('en-IN')} – ${s.max_half_yearly==null?'and above':Number(s.max_half_yearly).toLocaleString('en-IN')}</td>
+      <td><input type="number" min="0" value="${s.half_yearly_amount}" class="f-input" style="width:110px;padding:4px 8px;font-size:12px" onchange="updatePtSlab(${s.id}, this.value)"></td>
+      <td style="font-size:11px;color:var(--text3)">≈ ${fmt(Number(s.half_yearly_amount)/6)}/month</td>
+    </tr>`).join('')}
+    </tbody>
+  </table></div>`;
+}
+
+window.updatePtSlab = async function(id, value){
+  const val = Number(value) || 0;
+  try {
+    await sbPatch(`pt_slabs?id=eq.${id}`, { half_yearly_amount: val });
+    const slab = S.ptSlabs.find(s=>s.id===id);
+    if(slab) slab.half_yearly_amount = val;
+    renderPtSlabsTable();
+  } catch(e) {
+    alert('Could not save: '+e.message);
+  }
+};
 
 // ── Modal ─────────────────────────────────────────────────
 function showM(h){ document.getElementById('modal').innerHTML=h; document.getElementById('overlay').classList.add('open'); }
