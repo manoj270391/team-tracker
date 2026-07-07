@@ -709,6 +709,10 @@ let cRes=null, cCli=null;
 let curM = now.getMonth()+1, curY = now.getFullYear();
 
 const fmt   = n => (n==null||n==='') ? '—' : '₹'+Math.round(n).toLocaleString('en-IN');
+// jsPDF's built-in fonts (Helvetica/Courier) don't support the ₹ glyph - it renders as a
+// broken character and corrupts the rest of the string. Use "Rs." for anything drawn
+// directly into a generated PDF; the in-app HTML preview can keep using fmt()/₹ normally.
+const fmtPdf = n => (n==null||n==='') ? '—' : 'Rs. '+Math.round(n).toLocaleString('en-IN');
 
 // ── COMPANY INFO (salary slip header) ─────────────────────
 const COMPANY = {
@@ -2456,12 +2460,12 @@ window.printSalarySlipPDF = async function(rid, y, m, btn){
 
     // ── Earnings / Deductions table ──
     const edBody = [
-      ['Basic Salary', fmt(d.split.basic), 'Professional Tax', d.pt>0?fmt(d.pt):'NIL'],
-      ['House Rent Allowance (HRA)', fmt(d.split.hra), 'TDS (Income Tax)', d.itApplicable?fmt(d.incomeTax):'NIL'],
-      ['Other Allowances', fmt(d.split.other), 'Loss of Pay (LOP)', d.lopDeduction>0?fmt(d.lopDeduction):'NIL'],
+      ['Basic Salary', fmtPdf(d.split.basic), 'Professional Tax', d.pt>0?fmtPdf(d.pt):'NIL'],
+      ['House Rent Allowance (HRA)', fmtPdf(d.split.hra), 'TDS (Income Tax)', d.itApplicable?fmtPdf(d.incomeTax):'NIL'],
+      ['Other Allowances', fmtPdf(d.split.other), 'Loss of Pay (LOP)', d.lopDeduction>0?fmtPdf(d.lopDeduction):'NIL'],
     ];
-    if(d.elBonus>0) edBody.push([`EL Settlement (${y-1})`, fmt(d.elBonus), '', '']);
-    edBody.push(['Gross Earnings', fmt(d.gross), 'Total Deductions', fmt(d.totalDeductions)]);
+    if(d.elBonus>0) edBody.push([`EL Settlement (${y-1})`, fmtPdf(d.elBonus), '', '']);
+    edBody.push(['Gross Earnings', fmtPdf(d.gross), 'Total Deductions', fmtPdf(d.totalDeductions)]);
     const totalRowIdx = edBody.length - 1;
 
     pdf.autoTable({
@@ -2486,7 +2490,7 @@ window.printSalarySlipPDF = async function(rid, y, m, btn){
     pdf.setDrawColor(...BRAND_NAVY); pdf.setLineWidth(1.5);
     pdf.rect(margin, cy, contentW, boxH);
     pdf.setTextColor(...BRAND_NAVY); pdf.setFont('helvetica','bold'); pdf.setFontSize(14);
-    pdf.text(`NET PAY   ₹ ${Math.round(d.net).toLocaleString('en-IN')}`, pageW/2, cy+24, { align:'center' });
+    pdf.text(`NET PAY   ${fmtPdf(d.net)}`, pageW/2, cy+24, { align:'center' });
     pdf.setFont('helvetica','italic'); pdf.setFontSize(9.5); pdf.setTextColor(60,60,60);
     pdf.text(`(Rupees ${numberToIndianWords(d.net)} Only)`, pageW/2, cy+40, { align:'center' });
     cy += boxH + 20;
