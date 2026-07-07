@@ -537,8 +537,24 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
 
       <!-- WORK LOG -->
       <div id="p-worklog" class="page">
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-body" style="padding:14px 20px">
+            <div class="f-row">
+              <div class="f-group" style="margin-bottom:0">
+                <div class="f-label">Filter by employee / freelancer</div>
+                <select class="f-input" id="l-filter-res" onchange="renderLog()">
+                  <option value="">All</option>
+                </select>
+              </div>
+              <div class="f-group" style="margin-bottom:0">
+                <div class="f-label">Search by file / task name</div>
+                <input class="f-input" id="l-filter-search" placeholder="e.g. Toronto City Planning" oninput="renderLog()">
+              </div>
+            </div>
+          </div>
+        </div>
         <div class="card">
-          <div class="card-hd"><div class="card-title">All entries</div></div>
+          <div class="card-hd"><div class="card-title">Entries — <span id="l-month-label"></span></div></div>
           <div class="t-wrap"><table><thead><tr><th>Date</th><th>Resource</th><th>Type</th><th>Client</th><th>Complexity</th><th>Task</th><th>Pages</th><th>Rate</th><th>Revenue</th><th>Cost</th><th>Profit</th><th></th></tr></thead><tbody id="l-tb"></tbody></table></div>
         </div>
       </div>
@@ -1098,7 +1114,7 @@ window.nav = function(p) {
   if(p==='resources'){ btn.style.display='flex'; btn.textContent='+ Add resource'; btn.onclick=()=>openResModal(); }
   if(p==='clients')  { btn.style.display='flex'; btn.textContent='+ Add client';   btn.onclick=()=>openCliModal(); }
   if(p==='worklog')  { btn.style.display='flex'; btn.textContent='+ Add entry';    btn.onclick=()=>openLogModal(); }
-  if(['attendance','daily','monthly','holidays','leaves','payroll'].includes(p)) mp.style.display='flex';
+  if(['attendance','daily','monthly','holidays','leaves','payroll','worklog'].includes(p)) mp.style.display='flex';
   // Leave summary needs both month (as-of balance) and year (monthly/quarterly grid) — keep both visible
 
   if(p==='payroll'){
@@ -1800,9 +1816,28 @@ window.toggleHoliday = async function(y,m,d) {
 
 // ── WORK LOG ──────────────────────────────────────────────
 function renderLog() {
-  const sorted=[...S.log].sort((a,b)=>a.date.localeCompare(b.date));
+  // Populate the employee/freelancer filter dropdown once per resources change (keeps current selection if set)
+  const resFilterEl = document.getElementById('l-filter-res');
+  const prevSelected = resFilterEl.value;
+  resFilterEl.innerHTML = `<option value="">All</option>` +
+    S.resources.map(r=>`<option value="${r.id}" ${prevSelected===r.id?'selected':''}>${r.name} (${r.type})</option>`).join('');
+
+  document.getElementById('l-month-label').textContent = `${MONTHS[curM-1]} ${curY}`;
+
+  const resFilter = resFilterEl.value;
+  const search = (document.getElementById('l-filter-search').value||'').trim().toLowerCase();
+
+  const filtered = S.log.filter(e=>{
+    const [ey,em] = e.date.split('-').map(Number);
+    if(ey!==curY || em!==curM) return false;
+    if(resFilter && e.resource_id!==resFilter) return false;
+    if(search && !(e.task||'').toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  const sorted=[...filtered].sort((a,b)=>a.date.localeCompare(b.date));
   document.getElementById('l-tb').innerHTML = !sorted.length
-    ? `<tr><td colspan="12"><div class="empty"><div class="empty-ico">📋</div><div class="empty-txt">No entries yet. Click + Add entry.</div></div></td></tr>`
+    ? `<tr><td colspan="12"><div class="empty"><div class="empty-ico">📋</div><div class="empty-txt">No entries match ${resFilter||search?'these filters':'this month'}.</div></div></td></tr>`
     : sorted.map(e=>{
         const r=S.resources.find(x=>x.id===e.resource_id);
         const c=S.clients.find(x=>x.id===e.client_id);
