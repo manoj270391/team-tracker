@@ -1427,6 +1427,10 @@ window.openResModal = function(id) {
     </div>
 
     <div id="r-emp-block" style="display:${type==='Employee'?'block':'none'}">
+      <div class="f-row">
+        <div class="f-group"><div class="f-label">Employee ID</div><input class="f-input" id="r-emp-code" value="${r.employee_code||''}" placeholder="e.g. EMP-001"></div>
+        <div class="f-group"><div class="f-label">Bank A/C — last 4 digits only</div><input class="f-input" id="r-bank-last4" maxlength="4" inputmode="numeric" value="${r.bank_last4||''}" placeholder="e.g. 1234"></div>
+      </div>
       <div class="f-group">
         <div class="f-label">Date of joining</div>
         <input class="f-input" id="r-joining-date" type="date" value="${r.joining_date||''}">
@@ -1495,8 +1499,11 @@ window.saveRes = async function(id) {
   if(!name){alert('Name required');return;}
 
   let cost=0, salary_type='daily', monthly_salary=null, special_cost=null, joining_date=null;
+  let employee_code=null, bank_last4=null;
   if(type==='Employee'){
     joining_date = document.getElementById('r-joining-date').value || null;
+    employee_code = document.getElementById('r-emp-code').value.trim() || null;
+    bank_last4 = document.getElementById('r-bank-last4').value.trim().slice(-4) || null;
     salary_type = document.getElementById('r-salary-type').value;
     if(salary_type==='monthly'){
       monthly_salary = parseFloat(document.getElementById('r-monthly-salary').value)||0;
@@ -1513,7 +1520,7 @@ window.saveRes = async function(id) {
   }
 
   try {
-    const payload = {name,role,type,cost,salary_type,monthly_salary,special_cost,joining_date};
+    const payload = {name,role,type,cost,salary_type,monthly_salary,special_cost,joining_date,employee_code,bank_last4};
     if(id) { await sbPatch(`resources?id=eq.${id}`,payload); }
     else   { await sbPost('resources',payload); }
     await loadAll(); closeM(); render(); toast(id?'Resource updated':'Resource added');
@@ -2243,9 +2250,14 @@ window.openSalarySlip = function(rid){
       </div>
       <div class="f-row" style="margin-bottom:14px">
         <div><div class="prev-lbl">Employee</div><div style="font-weight:600">${r.name}</div></div>
+        <div><div class="prev-lbl">Employee ID</div><div>${r.employee_code||'—'}</div></div>
         <div><div class="prev-lbl">Role</div><div>${r.role||'—'}</div></div>
         <div><div class="prev-lbl">Date of joining</div><div>${r.joining_date||'—'}</div></div>
+      </div>
+      <div class="f-row" style="margin-bottom:14px">
+        <div><div class="prev-lbl">Bank A/C No.</div><div class="td-mono">${r.bank_last4?('XXXXXXXX'+r.bank_last4):'—'}</div></div>
         <div><div class="prev-lbl">Working days this month</div><div>${wd}</div></div>
+        <div></div><div></div>
       </div>
       <div style="border-top:1px solid var(--border);padding-top:12px;margin-bottom:12px">
         <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Attendance</div>
