@@ -235,6 +235,7 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
   padding: 28px; width: 480px; max-width: 96vw; max-height: 92vh; overflow-y: auto;
   animation: pop .18s ease;
 }
+.modal:has(#slip-print-area) { width: 720px; }
 @keyframes pop { from{transform:scale(.94) translateY(10px);opacity:0} to{transform:none;opacity:1} }
 .modal-title { font-size: 16px; font-weight: 700; margin-bottom: 20px; }
 .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
@@ -309,6 +310,28 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
 }
 
 /* ── Print (salary slip) ────────────────────────────────── */
+/* ── Salary slip (in-app preview - mirrors the print window's own styles) ── */
+#slip-print-area { background:#fff; color:#1a1a1a; padding:20px; border-radius:6px; font-family: Arial, Helvetica, sans-serif; font-size:13px; }
+#slip-print-area table { width:100%; border-collapse: collapse; }
+#slip-print-area .slip-hd-tb td { vertical-align: middle; padding: 0 0 14px 0; border:none; }
+#slip-print-area .slip-logo-cell { width: 130px; }
+#slip-print-area .slip-company-name { font-size: 17px; font-weight: 700; }
+#slip-print-area .slip-company-addr { font-size: 11.5px; color: #444; margin-top: 2px; }
+#slip-print-area .slip-title { text-align:center; font-weight:700; font-size:14px; background:#eef1f5; padding:8px; border:1px solid #ccc; margin-bottom:14px; }
+#slip-print-area .slip-info-tb { border:1px solid #ccc; margin-bottom:14px; }
+#slip-print-area .slip-info-tb td { border:1px solid #ccc; padding:6px 10px; font-size:12.5px; }
+#slip-print-area .slip-info-tb td.lbl { font-weight:700; background:#f7f8fa; width:20%; }
+#slip-print-area .slip-ed-tb { border:1px solid #ccc; margin-bottom:14px; }
+#slip-print-area .slip-ed-tb th { background:#eef1f5; border:1px solid #ccc; padding:7px 10px; text-align:left; font-size:12.5px; }
+#slip-print-area .slip-ed-tb td { border:1px solid #ccc; padding:7px 10px; font-size:12.5px; }
+#slip-print-area .slip-ed-tb td:nth-child(2), #slip-print-area .slip-ed-tb td:nth-child(4) { text-align:right; font-family: monospace; }
+#slip-print-area .slip-ed-tb tr.tot td { font-weight:700; background:#f7f8fa; }
+#slip-print-area .slip-net-tb { border:2px solid #333; margin-bottom:6px; }
+#slip-print-area .slip-net-tb td { padding:12px; text-align:center; border:none; }
+#slip-print-area .slip-net-amt { font-size:16px; font-weight:700; }
+#slip-print-area .slip-net-words { font-size:12px; font-style:italic; color:#333; margin-top:4px; }
+#slip-print-area .slip-footnote { text-align:center; font-size:11px; font-style:italic; color:#555; margin-top:10px; }
+
 @media print{
   body * { visibility: hidden; }
   #slip-print-area, #slip-print-area * { visibility: visible; }
@@ -684,6 +707,41 @@ let cRes=null, cCli=null;
 let curM = now.getMonth()+1, curY = now.getFullYear();
 
 const fmt   = n => (n==null||n==='') ? '—' : '₹'+Math.round(n).toLocaleString('en-IN');
+
+// ── COMPANY INFO (salary slip header) ─────────────────────
+const COMPANY = {
+  name: 'Global Net Services',
+  address: 'Regency House, 4th Floor, No. 341, Anna Salai, Teynampet, Chennai - 600006',
+  phone: '+91 9840033344',
+  email: 'support@globalnetservices.biz',
+  logo: 'data:image/jpeg;base64,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'
+};
+
+// ── NUMBER TO WORDS (Indian numbering: lakh/crore) ────────
+const NUM_WORDS_ONES = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+const NUM_WORDS_TENS = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+function twoDigitWords(n){
+  if(n<20) return NUM_WORDS_ONES[n];
+  return NUM_WORDS_TENS[Math.floor(n/10)] + (n%10 ? ' '+NUM_WORDS_ONES[n%10] : '');
+}
+function threeDigitWords(n){
+  const h = Math.floor(n/100), r = n%100;
+  return (h ? NUM_WORDS_ONES[h]+' Hundred'+(r?' ':'') : '') + (r ? twoDigitWords(r) : '');
+}
+function numberToIndianWords(num){
+  num = Math.round(num);
+  if(num===0) return 'Zero';
+  const crore = Math.floor(num/10000000); num %= 10000000;
+  const lakh = Math.floor(num/100000); num %= 100000;
+  const thousand = Math.floor(num/1000); num %= 1000;
+  const rest = num;
+  let parts = [];
+  if(crore) parts.push(threeDigitWords(crore)+' Crore');
+  if(lakh) parts.push(threeDigitWords(lakh)+' Lakh');
+  if(thousand) parts.push(threeDigitWords(thousand)+' Thousand');
+  if(rest) parts.push(threeDigitWords(rest));
+  return parts.join(' ');
+}
 const fmtN  = n => (n==null||n==='') ? '—' : Math.round(n).toLocaleString('en-IN');
 const toDay = () => { const d=getISTDate(); return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; };
 const dim   = (y,m) => new Date(y,m,0).getDate();
@@ -739,6 +797,11 @@ function incomeTaxOverrideFor(r,y,m){
   return Number(S.payrollOverrides[r.id+'-'+y+'-'+m]?.income_tax || 0);
 }
 
+// Pay date is set manually each month (credit date varies 1st-5th) rather than computed.
+function payDateOverrideFor(r,y,m){
+  return S.payrollOverrides[r.id+'-'+y+'-'+m]?.pay_date || '';
+}
+
 // Professional Tax (Tamil Nadu): looked up from the editable pt_slabs table based on
 // average half-yearly income, spread evenly across all 12 months per company preference
 // (statutory cycle is actually half-yearly, deducted only in Aug/Jan - see Leave Policy
@@ -766,8 +829,11 @@ function accrualMonths(startAbs, endAbs){
   return endAbs - startAbs + 1;
 }
 
-// CL/SL: reset every calendar year. Returns entitlement accrued in year Y
-// from the start of accrual up through target month M (inclusive).
+// CL/SL: full annual entitlement (12 days), pro-rated for mid-year joiners and for the
+// July-2026 tracking start - available in full from the start of the year (not paced out
+// 1/month), so "remaining" always means the whole year's balance minus usage to date. The
+// `m` parameter is kept for call-site compatibility but no longer changes the result within
+// a given year - only which year's pro-ration applies.
 function clslEntitlementThroughMonth(r, y, m){
   if(!r.joining_date) return 0;
   const [jy,jmo] = r.joining_date.split('-').map(Number);
@@ -776,8 +842,7 @@ function clslEntitlementThroughMonth(r, y, m){
   const yearEnd   = absMonth(y,12);
   const trackingFloor = (y===2026) ? TRACKING_START_ABS : yearStart; // only 2026 is clipped to July
   const startAbs = Math.max(joinAbs, yearStart, trackingFloor);
-  const targetAbs = Math.min(absMonth(y,m), yearEnd);
-  return Math.min(12, accrualMonths(startAbs, targetAbs));
+  return Math.min(12, accrualMonths(startAbs, yearEnd));
 }
 
 // EL: only after 12 months continuous service; carries forward (no reset), capped at 45 for display
@@ -2214,22 +2279,11 @@ function renderPayroll(){
     <td class="td-mono" style="font-weight:700;color:var(--green)">${fmt(totNet)}</td><td></td>`;
 }
 
-window.openSalarySlip = function(rid){
+function salarySlipData(rid,y,m){
   const r = S.resources.find(x=>x.id===rid);
-  const y=curY, m=curM, days=dim(y,m);
-  let present=0, half=0, absentCount=0;
-  for(let d=1; d<=days; d++){
-    const isSun = new Date(y,m-1,d).getDay()===0;
-    const hol = S.holidays[holidayKey(y,m,d)];
-    if(isSun||hol) continue;
-    const st = S.attendance[attK(r.id,y,m,d)]?.status;
-    if(st==='P') present++;
-    else if(st==='HF') half++;
-    else if(st==='A') absentCount++;
-  }
+  const days = dim(y,m);
   const wd = workingDaysInMonth(y,m);
   const brk = r.joining_date ? monthLeaveBreakdown(r,y,m) : {cl:0,sl:0,el:0,lopExplicit:0,poolAllowed:0,poolUsedThisMonth:0,poolOverflow:0,totalLOPDays:0};
-  const bal = r.joining_date ? leaveBalance(r,y,m) : null;
   const baseGross = r.salary_type==='monthly' ? (r.monthly_salary||0) : dailyCostFor(r,y,m)*wd;
   const perDay = dailyCostFor(r,y,m);
   const elBonus = (m===2) ? Number(elSettlementRow(r,y-1)?.amount||0) : 0;
@@ -2240,77 +2294,67 @@ window.openSalarySlip = function(rid){
   const itApplicable = incomeTaxApplicable(r);
   const incomeTax = itApplicable ? incomeTaxOverrideFor(r,y,m) : 0;
   const totalDeductions = lopDeduction + pt + incomeTax;
-  const net = gross + elBonus*0 - totalDeductions; // elBonus already folded into gross above
+  const net = gross - totalDeductions;
+  const payDate = payDateOverrideFor(r,y,m);
+  return { r, y, m, days, wd, brk, baseGross, elBonus, gross, split, lopDeduction, pt, itApplicable, incomeTax, totalDeductions, net, payDate };
+}
 
+// Builds the actual slip document markup (header table + earnings/deductions), shared by
+// both the in-app preview and the standalone print window. `editableTax` controls whether
+// the Income Tax cell is a live input (in-app) or plain text (print/PDF).
+function salarySlipMarkup(d, editableTax){
+  const { r,y,m,wd,brk,gross,split,lopDeduction,pt,itApplicable,incomeTax,totalDeductions,net,payDate } = d;
+  const taxCell = itApplicable
+    ? (editableTax
+        ? `<span style="display:flex;gap:6px;align-items:center;justify-content:flex-end"><input id="slip-it-input" type="number" min="0" value="${incomeTax}" class="f-input" style="width:100px;padding:4px 8px;font-size:12px"><button class="btn btn-ghost btn-sm" onclick="saveIncomeTax('${r.id}',${y},${m})">Save</button></span>`
+        : fmt(incomeTax))
+    : 'NIL';
+  const payDateCell = editableTax
+    ? `<span style="display:flex;gap:6px;align-items:center"><input id="slip-paydate-input" type="date" value="${payDate}" class="f-input" style="padding:4px 8px;font-size:12px"><button class="btn btn-ghost btn-sm" onclick="savePayDate('${r.id}',${y},${m})">Save</button></span>`
+    : (payDate ? new Date(payDate+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—');
+
+  return `
+    <table class="slip-hd-tb">
+      <tr><td colspan="2" class="slip-logo-cell">
+        <img src="${COMPANY.logo}" alt="logo" style="height:42px;display:block">
+      </td><td colspan="2" class="slip-company-cell">
+        <div class="slip-company-name">${COMPANY.name}</div>
+        <div class="slip-company-addr">${COMPANY.address}</div>
+        <div class="slip-company-addr">${COMPANY.phone} &nbsp;|&nbsp; ${COMPANY.email}</div>
+      </td></tr>
+    </table>
+    <div class="slip-title">SALARY SLIP — ${MONTHS[m-1].toUpperCase()} ${y}</div>
+    <table class="slip-info-tb">
+      <tr><td class="lbl">Employee Name</td><td>${r.name}</td><td class="lbl">Employee ID</td><td>${r.employee_code||'—'}</td></tr>
+      <tr><td class="lbl">Designation</td><td>${r.role||'—'}</td><td class="lbl">Date of Joining</td><td>${r.joining_date||'—'}</td></tr>
+      <tr><td class="lbl">Pay Period</td><td>${MONTHS[m-1]} ${y}</td><td class="lbl">Pay Date</td><td>${payDateCell}</td></tr>
+      <tr><td class="lbl">Bank A/C No.</td><td>${r.bank_last4?('XXXXXXXX'+r.bank_last4):'—'}</td><td class="lbl">Working Days</td><td>${wd}</td></tr>
+      <tr><td class="lbl">Days in Month</td><td>${d.days}</td><td class="lbl">LOP Days</td><td>${brk.totalLOPDays||0}</td></tr>
+    </table>
+    <table class="slip-ed-tb">
+      <tr><th>EARNINGS</th><th>Amount</th><th>DEDUCTIONS</th><th>Amount</th></tr>
+      <tr><td>Basic Salary</td><td>${fmt(split.basic)}</td><td>Professional Tax</td><td>${pt>0?fmt(pt):'NIL'}</td></tr>
+      <tr><td>House Rent Allowance (HRA)</td><td>${fmt(split.hra)}</td><td>TDS (Income Tax)</td><td style="text-align:right">${taxCell}</td></tr>
+      <tr><td>Other Allowances</td><td>${fmt(split.other)}</td><td>Loss of Pay (LOP)</td><td>${lopDeduction>0?fmt(lopDeduction):'NIL'}</td></tr>
+      ${d.elBonus>0?`<tr><td>EL Settlement (${y-1})</td><td>${fmt(d.elBonus)}</td><td></td><td></td></tr>`:''}
+      <tr class="tot"><td>Gross Earnings</td><td>${fmt(gross)}</td><td>Total Deductions</td><td>${fmt(totalDeductions)}</td></tr>
+    </table>
+    <table class="slip-net-tb">
+      <tr><td>
+        <div class="slip-net-amt">NET PAY &nbsp; ₹ ${Math.round(net).toLocaleString('en-IN')}</div>
+        <div class="slip-net-words">(Rupees ${numberToIndianWords(net)} Only)</div>
+      </td></tr>
+    </table>
+    <div class="slip-footnote">This is a computer-generated salary slip and does not require a signature.</div>`;
+}
+
+window.openSalarySlip = function(rid){
+  const d = salarySlipData(rid, curY, curM);
   showM(`
-    <div id="slip-print-area">
-      <div style="text-align:center;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)">
-        <div style="font-size:16px;font-weight:700">Salary Slip</div>
-        <div style="font-size:12px;color:var(--text3)">${MONTHS[m-1]} ${y}</div>
-      </div>
-      <div class="f-row" style="margin-bottom:14px">
-        <div><div class="prev-lbl">Employee</div><div style="font-weight:600">${r.name}</div></div>
-        <div><div class="prev-lbl">Employee ID</div><div>${r.employee_code||'—'}</div></div>
-        <div><div class="prev-lbl">Role</div><div>${r.role||'—'}</div></div>
-        <div><div class="prev-lbl">Date of joining</div><div>${r.joining_date||'—'}</div></div>
-      </div>
-      <div class="f-row" style="margin-bottom:14px">
-        <div><div class="prev-lbl">Bank A/C No.</div><div class="td-mono">${r.bank_last4?('XXXXXXXX'+r.bank_last4):'—'}</div></div>
-        <div><div class="prev-lbl">Working days this month</div><div>${wd}</div></div>
-        <div></div><div></div>
-      </div>
-      <div style="border-top:1px solid var(--border);padding-top:12px;margin-bottom:12px">
-        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Attendance</div>
-        <div class="f-row">
-          <div><div class="prev-lbl">Present</div><div class="td-mono">${present}</div></div>
-          <div><div class="prev-lbl">Half-day</div><div class="td-mono">${half}</div></div>
-          <div><div class="prev-lbl">CL taken</div><div class="td-mono">${brk.cl}</div></div>
-          <div><div class="prev-lbl">SL taken</div><div class="td-mono">${brk.sl}</div></div>
-        </div>
-        <div class="f-row">
-          <div><div class="prev-lbl">EL taken</div><div class="td-mono">${brk.el}</div></div>
-          <div><div class="prev-lbl">LOP days</div><div class="td-mono" style="color:${brk.totalLOPDays>0?'var(--red)':'inherit'}">${brk.totalLOPDays}</div></div>
-          <div></div><div></div>
-        </div>
-      </div>
-      ${bal?`<div style="border-top:1px solid var(--border);padding-top:12px;margin-bottom:12px">
-        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Leave balance (as of this month) — pooled CL+SL+EL, LOP only once all three run out</div>
-        <div class="f-row">
-          <div><div class="prev-lbl">CL remaining</div><div class="td-mono">${bal.cl.remaining} / ${bal.cl.entitlement}</div></div>
-          <div><div class="prev-lbl">SL remaining</div><div class="td-mono">${bal.sl.remaining} / ${bal.sl.entitlement}</div></div>
-          <div><div class="prev-lbl">EL remaining</div><div class="td-mono">${bal.el.remaining} / ${bal.el.entitlement}</div></div>
-          <div></div>
-        </div>
-      </div>`:''}
-      <div style="border-top:1px solid var(--border);padding-top:12px">
-        <div class="f-row" style="align-items:start">
-          <div style="flex:1">
-            <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Earnings</div>
-            <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Basic Salary (50%)</span><span class="td-mono">${fmt(split.basic)}</span></div>
-            <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px"><span>House Rent Allowance (30%)</span><span class="td-mono">${fmt(split.hra)}</span></div>
-            <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Other Allowances (20%)</span><span class="td-mono">${fmt(split.other)}</span></div>
-            ${elBonus>0?`<div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px;color:var(--purple)"><span>🌴 EL Settlement (${y-1})</span><span class="td-mono">+${fmt(elBonus)}</span></div>`:''}
-            <div class="row" style="display:flex;justify-content:space-between;font-weight:700;padding-top:6px;border-top:1px solid var(--border)"><span>Gross Earnings</span><span class="td-mono">${fmt(gross)}</span></div>
-          </div>
-          <div style="flex:1">
-            <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Deductions</div>
-            <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Professional Tax</span><span class="td-mono">${pt>0?fmt(pt):'NIL'}</span></div>
-            <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px;align-items:center">
-              <span>TDS (Income Tax)</span>
-              ${itApplicable
-                ? `<span style="display:flex;gap:6px;align-items:center"><input id="slip-it-input" type="number" min="0" value="${incomeTax}" class="f-input" style="width:100px;padding:4px 8px;font-size:12px"><button class="btn btn-ghost btn-sm" onclick="saveIncomeTax('${r.id}',${y},${m})">Save</button></span>`
-                : `<span class="td-mono">NIL <span style="color:var(--text3);font-size:11px">(under ₹12L/yr)</span></span>`}
-            </div>
-            <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Loss of Pay</span><span class="td-mono">${lopDeduction>0?fmt(lopDeduction):'NIL'}</span></div>
-            <div class="row" style="display:flex;justify-content:space-between;font-weight:700;padding-top:6px;border-top:1px solid var(--border)"><span>Total Deductions</span><span class="td-mono">${fmt(totalDeductions)}</span></div>
-          </div>
-        </div>
-        <div class="row" style="display:flex;justify-content:space-between;font-weight:700;font-size:15px;padding-top:12px;margin-top:8px;border-top:1px solid var(--border)"><span>Net Pay</span><span class="td-mono" style="color:var(--green)">${fmt(net)}</span></div>
-      </div>
-    </div>
+    <div id="slip-print-area">${salarySlipMarkup(d, true)}</div>
     <div class="modal-footer">
       <button class="btn" onclick="closeM()">Close</button>
-      <button class="btn btn-primary" onclick="window.print()">🖨 Print / Save as PDF</button>
+      <button class="btn btn-primary" onclick="printSalarySlipPDF('${rid}',${curY},${curM})">🖨 Print / Save as PDF</button>
     </div>`);
 };
 
@@ -2320,16 +2364,72 @@ window.saveIncomeTax = async function(rid, y, m){
     const existing = S.payrollOverrides[rid+'-'+y+'-'+m];
     if(existing){
       await sbPatch(`payroll_month_overrides?id=eq.${existing.id}`, { income_tax: val });
+      existing.income_tax = val;
     } else {
       const [row] = await sbPost('payroll_month_overrides', { resource_id: rid, year: y, month: m, income_tax: val });
       if(row) S.payrollOverrides[rid+'-'+y+'-'+m] = row;
     }
-    if(existing) existing.income_tax = val;
     openSalarySlip(rid); // refresh the slip with the new figure
     renderPayroll();
   } catch(e) {
     alert('Could not save: '+e.message);
   }
+};
+
+window.savePayDate = async function(rid, y, m){
+  const val = document.getElementById('slip-paydate-input').value || null;
+  try {
+    const existing = S.payrollOverrides[rid+'-'+y+'-'+m];
+    if(existing){
+      await sbPatch(`payroll_month_overrides?id=eq.${existing.id}`, { pay_date: val });
+      existing.pay_date = val;
+    } else {
+      const [row] = await sbPost('payroll_month_overrides', { resource_id: rid, year: y, month: m, pay_date: val });
+      if(row) S.payrollOverrides[rid+'-'+y+'-'+m] = row;
+    }
+    openSalarySlip(rid);
+  } catch(e) {
+    alert('Could not save: '+e.message);
+  }
+};
+
+// Opens a clean, standalone window with just the slip (white background, no app chrome),
+// so printing/"Save as PDF" can't be affected by the main app's modal/overlay layout at
+// all. Also sets the window title to control the suggested PDF filename.
+window.printSalarySlipPDF = function(rid, y, m){
+  const d = salarySlipData(rid, y, m);
+  const filename = `${d.r.name} Salary Slip - ${MONTHS[m-1]} ${y}`;
+  const w = window.open('', '_blank', 'width=850,height=1100');
+  if(!w){ alert('Please allow pop-ups for this site to print the salary slip.'); return; }
+  w.document.write(`<!DOCTYPE html><html><head><title>${filename}</title><meta charset="utf-8">
+    <style>
+      * { box-sizing: border-box; }
+      body { font-family: Arial, Helvetica, sans-serif; color:#1a1a1a; margin: 28px; font-size: 13px; }
+      table { width:100%; border-collapse: collapse; }
+      .slip-hd-tb td { vertical-align: middle; padding: 0 0 14px 0; }
+      .slip-logo-cell { width: 130px; }
+      .slip-company-name { font-size: 17px; font-weight: 700; }
+      .slip-company-addr { font-size: 11.5px; color: #444; margin-top: 2px; }
+      .slip-title { text-align:center; font-weight:700; font-size:14px; background:#eef1f5; padding:8px; border:1px solid #ccc; margin-bottom:14px; }
+      .slip-info-tb { border:1px solid #ccc; margin-bottom:14px; }
+      .slip-info-tb td { border:1px solid #ccc; padding:6px 10px; font-size:12.5px; }
+      .slip-info-tb td.lbl { font-weight:700; background:#f7f8fa; width:20%; }
+      .slip-ed-tb { border:1px solid #ccc; margin-bottom:14px; }
+      .slip-ed-tb th { background:#eef1f5; border:1px solid #ccc; padding:7px 10px; text-align:left; font-size:12.5px; }
+      .slip-ed-tb td { border:1px solid #ccc; padding:7px 10px; font-size:12.5px; }
+      .slip-ed-tb td:nth-child(2), .slip-ed-tb td:nth-child(4) { text-align:right; font-family: monospace; }
+      .slip-ed-tb tr.tot td { font-weight:700; background:#f7f8fa; }
+      .slip-net-tb { border:2px solid #333; margin-bottom:14px; }
+      .slip-net-tb td { padding:12px; text-align:center; }
+      .slip-net-amt { font-size:16px; font-weight:700; }
+      .slip-net-words { font-size:12px; font-style:italic; color:#333; margin-top:4px; }
+      .slip-footnote { text-align:center; font-size:11px; font-style:italic; color:#555; margin-top:10px; }
+      @media print { body { margin: 10mm; } }
+    </style></head><body>${salarySlipMarkup(d, false)}</body></html>`);
+  w.document.close();
+  w.onload = () => { w.focus(); w.print(); };
+  // Fallback in case onload doesn't fire (some browsers with document.write)
+  setTimeout(() => { try { w.focus(); w.print(); } catch{} }, 400);
 };
 
 // ── LEAVE POLICY ──────────────────────────────────────────
