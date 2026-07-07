@@ -10,8 +10,8 @@ const {
 } = require("./_urlHelpers");
 const { getFileMeta } = require("./_fileMeta");
 
-const BATCH_SIZE = 4;
-const FETCH_TIMEOUT_MS = 10000;
+const BATCH_SIZE = 1; // one page per tick - some sites embed huge (10s of MB) pages, safer to isolate each fetch
+const FETCH_TIMEOUT_MS = 25000;
 
 async function fetchWithTimeout(url, ms) {
   const controller = new AbortController();
@@ -113,6 +113,82 @@ module.exports = async (req, res) => {
           }
         });
 
+        // Some sites (especially JS-rendered widgets) embed their entire dataset as
+        // inline JSON inside a <script> blob rather than real <a href> links. Catch
+        // file links buried in there too - but keep these separate from real anchor
+        // links, since they're not navigation intent and shouldn't be queued as pages
+        // to crawl further (that would flood the queue with unrelated asset/API URLs).
+        const rawFileLinks = new Set();
+        const rawUrlMatches = html.match(/https?:\/\/[^\s"'<>\\]+/g) || [];
+        for (const raw of rawUrlMatches) {
+          try {
+            const abs = new URL(raw, item.url);
+            abs.hash = "";
+            const ext = extensionOf(abs.pathname);
+            if ((abs.protocol === "http:" || abs.protocol === "https:") && matchFileType(ext, scan.file_types)) {
+              rawFileLinks.add(abs.toString());
+            }
+          } catch {
+            /* ignore malformed urls */
+          }
+        }
+
+        // Some file-listing widgets embed their content in an <iframe> pointing to a
+        // separate document rather than the main page's HTML. Fetch each iframe's
+        // content directly and scan it the same way (anchors + raw text) - but don't
+        // add the iframe itself, or anything inside it, to the crawl queue: it may be
+        // hosted on a third-party domain and we only want its file links, not to
+        // wander around that domain.
+        const iframeSrcs = [];
+        $("iframe[src]").each((_, el) => {
+          const src = $(el).attr("src");
+          if (!src) return;
+          try {
+            const abs = new URL(src, item.url);
+            if (abs.protocol === "http:" || abs.protocol === "https:") iframeSrcs.push(abs.toString());
+          } catch {
+            /* ignore malformed urls */
+          }
+        });
+        for (const iframeUrl of iframeSrcs.slice(0, 5)) {
+          try {
+            const iframeRes = await fetchWithTimeout(iframeUrl, FETCH_TIMEOUT_MS);
+            const iframeCT = iframeRes.headers.get("content-type") || "";
+            if (!iframeRes.ok || !iframeCT.includes("text/html")) continue;
+            const iframeHtml = await iframeRes.text();
+            const $$ = cheerio.load(iframeHtml);
+            $$("a[href]").each((_, el) => {
+              const href = $$(el).attr("href");
+              if (!href) return;
+              try {
+                const abs = new URL(href, iframeUrl);
+                abs.hash = "";
+                const ext = extensionOf(abs.pathname);
+                if ((abs.protocol === "http:" || abs.protocol === "https:") && matchFileType(ext, scan.file_types)) {
+                  rawFileLinks.add(abs.toString());
+                }
+              } catch {
+                /* ignore malformed urls */
+              }
+            });
+            const iframeRawMatches = iframeHtml.match(/https?:\/\/[^\s"'<>\\]+/g) || [];
+            for (const raw of iframeRawMatches) {
+              try {
+                const abs = new URL(raw, iframeUrl);
+                abs.hash = "";
+                const ext = extensionOf(abs.pathname);
+                if ((abs.protocol === "http:" || abs.protocol === "https:") && matchFileType(ext, scan.file_types)) {
+                  rawFileLinks.add(abs.toString());
+                }
+              } catch {
+                /* ignore malformed urls */
+              }
+            }
+          } catch {
+            // iframe fetch failed/timed out - skip it, doesn't block the rest of the scan
+          }
+        }
+
         for (const link of links) {
           const linkUrl = new URL(link);
           const ext = extensionOf(linkUrl.pathname);
@@ -161,6 +237,31 @@ module.exports = async (req, res) => {
             } catch {
               // already visited - skip re-queueing
             }
+          }
+        }
+
+        for (const link of rawFileLinks) {
+          if (links.has(link)) continue; // already handled above via the anchor-tag pass
+          const linkUrl = new URL(link);
+          const matchedType = matchFileType(extensionOf(linkUrl.pathname), scan.file_types);
+          const meta = await getFileMeta(link, matchedType, scan.fetch_details);
+          try {
+            await sbFetch(sbUrl, sbKey, "doc_scan_files", {
+              method: "POST",
+              prefer: "return=minimal,resolution=ignore-duplicates",
+              body: JSON.stringify({
+                scan_id: scanId,
+                file_name: fileNameFromUrl(link),
+                file_type: matchedType,
+                source_page_url: item.url,
+                file_url: link,
+                size_bytes: meta.sizeBytes,
+                pages: meta.pages,
+              }),
+            });
+            newFilesFound += 1;
+          } catch {
+            // duplicate file already recorded for this scan - ignore
           }
         }
 
