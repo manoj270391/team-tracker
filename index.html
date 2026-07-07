@@ -204,7 +204,7 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
 }
 .att-cell:hover { transform: scale(1.12); border-color: var(--border2); }
 .att-cell[data-v="P"]  { background:rgba(54,211,153,.15); border-color:rgba(54,211,153,.5); color:var(--green); }
-.att-cell[data-v="A"]  { background:rgba(248,113,113,.15); border-color:rgba(248,113,113,.5); color:var(--red); }
+.att-cell[data-v="A"]  { background:rgba(248,113,113,.15); border-color:rgba(248,113,113,.5); color:var(--red); font-size:8px; letter-spacing:-0.02em; }
 .att-cell[data-v="HF"] { background:rgba(251,191,36,.15); border-color:rgba(251,191,36,.5); color:var(--amber); font-size:9px; }
 .att-cell[data-v="H"]  { background:rgba(167,139,250,.15); border-color:rgba(167,139,250,.5); color:var(--purple); cursor:default; }
 .att-cell[data-v="H"]:hover { transform:none; }
@@ -303,6 +303,18 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
   .f-row { grid-template-columns: 1fr; }
   .metrics { grid-template-columns: repeat(2,1fr); }
 }
+
+/* ── Print (salary slip) ────────────────────────────────── */
+@media print{
+  body * { visibility: hidden; }
+  #slip-print-area, #slip-print-area * { visibility: visible; }
+  #slip-print-area { position: absolute; top: 0; left: 0; width: 100%; color: #000; background: #fff; }
+  #slip-print-area .prev-lbl { color: #555; }
+  #slip-print-area div[style*="border-color:var(--border)"],
+  #slip-print-area div[style*="border-top:1px solid var(--border)"],
+  #slip-print-area div[style*="border-bottom:1px solid var(--border)"] { border-color: #ccc !important; }
+  .modal-footer, .overlay { display: none !important; }
+}
 </style>
 </head>
 <body>
@@ -384,6 +396,7 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
         <button class="sb-item" onclick="nav('daily')" data-p="daily"><span class="sb-icon">☀</span>Daily view</button>
         <button class="sb-item" onclick="nav('monthly')" data-p="monthly"><span class="sb-icon">📅</span>Monthly summary</button>
         <button class="sb-item" onclick="nav('leaves')" data-p="leaves"><span class="sb-icon">🌴</span>Leave summary</button>
+        <button class="sb-item" onclick="nav('payroll')" data-p="payroll"><span class="sb-icon">🧾</span>Payroll / Salary slips</button>
       </div>
       <div>
         <div class="sb-section-label">Manage</div>
@@ -395,6 +408,7 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
         <button class="sb-item" onclick="nav('resources')" data-p="resources"><span class="sb-icon">👥</span>Resources</button>
         <button class="sb-item" onclick="nav('clients')" data-p="clients"><span class="sb-icon">🏢</span>Clients</button>
         <button class="sb-item" onclick="nav('holidays')" data-p="holidays"><span class="sb-icon">🎌</span>Holidays</button>
+        <button class="sb-item" onclick="nav('policy')" data-p="policy"><span class="sb-icon">📄</span>Leave Policy</button>
       </div>
     </nav>
 
@@ -442,7 +456,7 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
       <div id="p-resources" class="page">
         <div class="card">
           <div class="card-hd"><div class="card-title">All resources</div></div>
-          <div class="t-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Type</th><th>Cost</th><th></th></tr></thead><tbody id="r-tb"></tbody></table></div>
+          <div class="t-wrap"><table><thead><tr><th>Name</th><th>Role</th><th>Type</th><th>Cost</th><th>Joined</th><th></th></tr></thead><tbody id="r-tb"></tbody></table></div>
         </div>
       </div>
 
@@ -464,7 +478,7 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
               <span><span class="badge b-A">A</span> Absent</span>
               <span><span class="badge b-HF">HF</span> Half-day</span>
               <span><span class="badge b-Hol">H</span> Holiday — Sunday or public holiday, marked automatically</span>
-              <span style="color:var(--text3)">· Click any working day to cycle P → A → HF</span>
+              <span style="color:var(--text3)">· Click any working day to choose Present / Half-day / Absent (with CL / SL / EL / LOP)</span>
             </div>
           </div>
         </div>
@@ -521,9 +535,13 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
         <div class="card" style="margin-bottom:14px">
           <div class="card-body" style="padding:11px 20px">
             <div style="font-size:12px;color:var(--text3);line-height:1.6">
-              Leave day = Absent (A) counted as 1, Half-day (HF) counted as 0.5. Sundays and public holidays are excluded — they're not working days to begin with. Applies to Employees only.
+              CL &amp; SL entitlement resets every January and is pro-rated for 2026 from July (when tracking began). EL only starts accruing after 12 months' continuous service, and carries forward (capped at 45 days) rather than resetting. LOP = Loss of Pay, deducted directly from salary. Applies to Employees only.
             </div>
           </div>
+        </div>
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Leave balances as of <span id="lv-asof-label"></span></div></div>
+          <div class="t-wrap"><table><thead><tr><th>Employee</th><th>CL Entitlement</th><th>CL Used</th><th>CL Remaining</th><th>SL Entitlement</th><th>SL Used</th><th>SL Remaining</th><th>EL Entitlement</th><th>EL Used</th><th>EL Remaining</th><th>LOP days (this year)</th></tr></thead><tbody id="lv-bal-tb"></tbody></table></div>
         </div>
         <div class="card">
           <div class="card-hd"><div class="card-title">Monthly breakdown — <span id="lv-year-label"></span></div></div>
@@ -532,6 +550,22 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
         <div class="card">
           <div class="card-hd"><div class="card-title">Quarterly &amp; yearly totals</div></div>
           <div class="t-wrap"><table><thead><tr><th>Employee</th><th>Q1 (Jan–Mar)</th><th>Q2 (Apr–Jun)</th><th>Q3 (Jul–Sep)</th><th>Q4 (Oct–Dec)</th><th>Year total</th></tr></thead><tbody id="lv-q-tb"></tbody></table></div>
+        </div>
+      </div>
+
+      <!-- PAYROLL -->
+      <div id="p-payroll" class="page">
+        <div class="metrics" id="pr-metrics"></div>
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Payroll summary — <span id="pr-month-label"></span></div></div>
+          <div class="t-wrap"><table><thead><tr><th>Employee</th><th>Present</th><th>Half-day</th><th>CL</th><th>SL</th><th>EL</th><th>LOP days</th><th>Gross (₹)</th><th>Deduction (₹)</th><th>Net Pay (₹)</th><th></th></tr></thead><tbody id="pr-tb"></tbody><tfoot><tr id="pr-tot-row"></tr></tfoot></table></div>
+        </div>
+      </div>
+
+      <!-- LEAVE POLICY -->
+      <div id="p-policy" class="page">
+        <div class="card">
+          <div class="card-body" id="policy-content" style="line-height:1.8;font-size:13px;color:var(--text2)"></div>
         </div>
       </div>
 
@@ -594,6 +628,119 @@ function dailyCostFor(r,y,m){
   }
   return r.cost||0; // flat daily cost fallback
 }
+
+// ── LEAVE POLICY ENGINE ───────────────────────────────────
+// Tracking begins July 2026 per company decision — CL/SL/EL for 2026
+// are pro-rated from July (or the employee's joining month if later),
+// not from Jan 1, since no attendance data exists before July.
+const TRACKING_START_ABS = 2026*12 + (7-1); // absolute month index for July 2026
+
+function absMonth(y,m){ return y*12 + (m-1); }
+function ymFromAbs(abs){ return { y: Math.floor(abs/12), m: (abs%12)+1 }; }
+
+// How many months of entitlement accrue between startAbs and endAbs (inclusive), 1 day/month
+function accrualMonths(startAbs, endAbs){
+  if(endAbs < startAbs) return 0;
+  return endAbs - startAbs + 1;
+}
+
+// CL/SL: reset every calendar year. Returns entitlement accrued in year Y
+// from the start of accrual up through target month M (inclusive).
+function clslEntitlementThroughMonth(r, y, m){
+  if(!r.joining_date) return 0;
+  const [jy,jmo] = r.joining_date.split('-').map(Number);
+  const joinAbs = absMonth(jy,jmo);
+  const yearStart = absMonth(y,1);
+  const yearEnd   = absMonth(y,12);
+  const trackingFloor = (y===2026) ? TRACKING_START_ABS : yearStart; // only 2026 is clipped to July
+  const startAbs = Math.max(joinAbs, yearStart, trackingFloor);
+  const targetAbs = Math.min(absMonth(y,m), yearEnd);
+  return Math.min(12, accrualMonths(startAbs, targetAbs));
+}
+
+// EL: only after 12 months continuous service; carries forward (no reset), capped at 45 for display
+function elEligibleAbs(r){
+  if(!r.joining_date) return null;
+  const [jy,jmo] = r.joining_date.split('-').map(Number);
+  return absMonth(jy,jmo) + 12; // eligible from this absolute month onward
+}
+function isELEligible(r, y, m){
+  const eligAbs = elEligibleAbs(r);
+  if(eligAbs==null) return false;
+  return absMonth(y,m) >= Math.max(eligAbs, (y===2026&&m>=1)?TRACKING_START_ABS:0);
+}
+// Cumulative EL entitlement from eligibility through target month (across years, no annual reset)
+function elEntitlementThroughMonth(r, y, m){
+  const eligAbs = elEligibleAbs(r);
+  if(eligAbs==null) return 0;
+  const targetAbs = absMonth(y,m);
+  const trackingFloor = TRACKING_START_ABS; // never accrue before July 2026, no data exists earlier
+  const startAbs = Math.max(eligAbs, trackingFloor);
+  return Math.max(0, accrualMonths(startAbs, targetAbs));
+}
+
+// Count attendance days of a given leave_type for resource r, up through year/month (inclusive)
+function countLeaveType(r, type, throughY, throughM, sinceY, sinceM){
+  const throughAbs = absMonth(throughY,throughM);
+  const sinceAbs = (sinceY!=null) ? absMonth(sinceY,sinceM) : -Infinity;
+  let n=0;
+  Object.values(S.attendance).forEach(a=>{
+    if(a.resource_id!==r.id || a.status!=='A' || a.leave_type!==type) return;
+    const abs=absMonth(a.year,a.month);
+    if(abs<=throughAbs && abs>=sinceAbs) n++;
+  });
+  return n;
+}
+
+// Full leave balance snapshot for a resource as of year/month (inclusive)
+function leaveBalance(r, y, m){
+  const clEnt = clslEntitlementThroughMonth(r,y,m);
+  const slEnt = clslEntitlementThroughMonth(r,y,m); // same formula, independent buckets
+  const clUsed = countLeaveType(r,'CL',y,m,y,1); // within calendar year y only (resets)
+  const slUsed = countLeaveType(r,'SL',y,m,y,1);
+  const elEnt = Math.min(45, elEntitlementThroughMonth(r,y,m));
+  const elUsed = countLeaveType(r,'EL',y,m,null,null); // cumulative, no reset
+  const lopTotal = countLeaveType(r,'LOP',y,m,y,1);
+  return {
+    cl:{ entitlement:clEnt, used:clUsed, remaining:Math.max(0,clEnt-clUsed) },
+    sl:{ entitlement:slEnt, used:slUsed, remaining:Math.max(0,slEnt-slUsed) },
+    el:{ entitlement:elEnt, used:elUsed, remaining:Math.max(0,elEnt-elUsed) },
+    lop:{ used:lopTotal }
+  };
+}
+
+// For salary slip: given month Y/M, work out how many of this month's CL/SL/EL
+// days should actually be paid vs converted to LOP because the balance ran out
+// (balance is consumed in calendar order, oldest first)
+function monthLeaveBreakdown(r, y, m){
+  const thisMonthCL = countLeaveType(r,'CL',y,m,y,m);
+  const thisMonthSL = countLeaveType(r,'SL',y,m,y,m);
+  const thisMonthEL = countLeaveType(r,'EL',y,m,y,m);
+  const thisMonthLOP = countLeaveType(r,'LOP',y,m,y,m);
+
+  const clEntThruMonth = clslEntitlementThroughMonth(r,y,m);
+  const clUsedBeforeMonth = countLeaveType(r,'CL',y,m-1,y,1);
+  const clAllowed = Math.max(0, clEntThruMonth - clUsedBeforeMonth);
+  const clOverflow = Math.max(0, thisMonthCL - clAllowed);
+
+  const slEntThruMonth = clslEntitlementThroughMonth(r,y,m);
+  const slUsedBeforeMonth = countLeaveType(r,'SL',y,m-1,y,1);
+  const slAllowed = Math.max(0, slEntThruMonth - slUsedBeforeMonth);
+  const slOverflow = Math.max(0, thisMonthSL - slAllowed);
+
+  const elEntThruMonth = Math.min(45, elEntitlementThroughMonth(r,y,m));
+  const [py,pm] = m===1 ? [y-1,12] : [y,m-1];
+  const elUsedBeforeMonth = countLeaveType(r,'EL',py,pm,null,null);
+  const elAllowed = Math.max(0, elEntThruMonth - elUsedBeforeMonth);
+  const elOverflow = Math.max(0, thisMonthEL - elAllowed);
+
+  const totalLOPDays = thisMonthLOP + clOverflow + slOverflow + elOverflow;
+  return {
+    cl:thisMonthCL, sl:thisMonthSL, el:thisMonthEL, lopExplicit:thisMonthLOP,
+    clOverflow, slOverflow, elOverflow, totalLOPDays
+  };
+}
+
 function calcCost(e){
   const r=S.resources.find(x=>x.id===e.resource_id);
   if(!r)return 0;
@@ -690,7 +837,7 @@ function setDbStatus(s) {
 }
 
 // ── Nav ───────────────────────────────────────────────────
-const PAGE_TITLES = {dashboard:'Dashboard',resources:'Resources',clients:'Clients',attendance:'Attendance',worklog:'Work log',daily:'Daily view',monthly:'Monthly summary',holidays:'Holidays',leaves:'Leave summary'};
+const PAGE_TITLES = {dashboard:'Dashboard',resources:'Resources',clients:'Clients',attendance:'Attendance',worklog:'Work log',daily:'Daily view',monthly:'Monthly summary',holidays:'Holidays',leaves:'Leave summary',payroll:'Payroll / Salary slips',policy:'Leave Policy'};
 
 window.nav = function(p) {
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
@@ -707,8 +854,17 @@ window.nav = function(p) {
   if(p==='resources'){ btn.style.display='flex'; btn.textContent='+ Add resource'; btn.onclick=()=>openResModal(); }
   if(p==='clients')  { btn.style.display='flex'; btn.textContent='+ Add client';   btn.onclick=()=>openCliModal(); }
   if(p==='worklog')  { btn.style.display='flex'; btn.textContent='+ Add entry';    btn.onclick=()=>openLogModal(); }
-  if(['attendance','daily','monthly','holidays','leaves'].includes(p)) mp.style.display='flex';
-  if(p==='leaves') selM.style.display='none'; // leave summary only needs a year, not a month
+  if(['attendance','daily','monthly','holidays','leaves','payroll'].includes(p)) mp.style.display='flex';
+  // Leave summary needs both month (as-of balance) and year (monthly/quarterly grid) — keep both visible
+
+  if(p==='payroll'){
+    // Default to previous month — this is what you'd credit salaries for on the 1st
+    let pm=curM-1, py=curY;
+    if(pm<1){ pm=12; py=curY-1; }
+    curM=pm; curY=py;
+    document.getElementById('sel-m').value=curM;
+    document.getElementById('sel-y').value=curY;
+  }
 
   render(p);
 };
@@ -724,6 +880,8 @@ function render(p) {
   if(p==='monthly')    renderMonthly();
   if(p==='holidays')   renderHolidays();
   if(p==='leaves')     renderLeaves();
+  if(p==='payroll')    renderPayroll();
+  if(p==='policy')     renderPolicy();
 }
 
 // ── Month pickers ─────────────────────────────────────────
@@ -770,7 +928,7 @@ function renderDash() {
 // ── RESOURCES ─────────────────────────────────────────────
 function renderRes() {
   document.getElementById('r-tb').innerHTML = !S.resources.length
-    ? `<tr><td colspan="5"><div class="empty"><div class="empty-ico">👥</div><div class="empty-txt">No resources yet. Click + Add resource.</div></div></td></tr>`
+    ? `<tr><td colspan="6"><div class="empty"><div class="empty-ico">👥</div><div class="empty-txt">No resources yet. Click + Add resource.</div></div></td></tr>`
     : S.resources.map(r=>{
         let costLabel;
         if(r.type==='Employee' && r.salary_type==='monthly'){
@@ -782,11 +940,21 @@ function renderRes() {
           costLabel = fmt(r.cost)+'/page';
           if(r.special_cost) costLabel += ` <span style="color:var(--purple)">(${fmt(r.special_cost)}/pg Complex-Form)</span>`;
         }
+        let joinLabel = '—';
+        if(r.type==='Employee'){
+          if(r.joining_date){
+            const eligible = isELEligible(r,curY,curM);
+            joinLabel = `${r.joining_date} <span class="badge ${eligible?'b-profit':'b-loss'}" style="margin-left:4px">${eligible?'EL eligible':'Not EL eligible yet'}</span>`;
+          } else {
+            joinLabel = '<span style="color:var(--amber)">Set joining date</span>';
+          }
+        }
         return `<tr>
         <td class="td-main">${r.name}</td>
         <td>${r.role||'—'}</td>
         <td><span class="badge ${r.type==='Employee'?'b-emp':'b-frl'}">${r.type==='Employee'?'👔':'🧑‍💻'} ${r.type}</span></td>
         <td class="td-mono">${costLabel}</td>
+        <td style="font-size:12px">${joinLabel}</td>
         <td><div style="display:flex;gap:6px">
           <button class="btn btn-ghost btn-sm" onclick="openResModal('${r.id}')">Edit</button>
           <button class="btn btn-danger btn-sm" onclick="delRes('${r.id}')">Delete</button>
@@ -812,6 +980,11 @@ window.openResModal = function(id) {
     </div>
 
     <div id="r-emp-block" style="display:${type==='Employee'?'block':'none'}">
+      <div class="f-group">
+        <div class="f-label">Date of joining</div>
+        <input class="f-input" id="r-joining-date" type="date" value="${r.joining_date||''}">
+        <div class="f-hint">Used to auto-calculate Earned Leave eligibility (12 months' service) and to pro-rate CL/SL entitlements.</div>
+      </div>
       <div class="f-group">
         <div class="f-label">How is pay calculated?</div>
         <select class="f-input" id="r-salary-type" onchange="onSalaryTypeChange()">
@@ -874,8 +1047,9 @@ window.saveRes = async function(id) {
   const type=document.getElementById('r-type').value;
   if(!name){alert('Name required');return;}
 
-  let cost=0, salary_type='daily', monthly_salary=null, special_cost=null;
+  let cost=0, salary_type='daily', monthly_salary=null, special_cost=null, joining_date=null;
   if(type==='Employee'){
+    joining_date = document.getElementById('r-joining-date').value || null;
     salary_type = document.getElementById('r-salary-type').value;
     if(salary_type==='monthly'){
       monthly_salary = parseFloat(document.getElementById('r-monthly-salary').value)||0;
@@ -892,7 +1066,7 @@ window.saveRes = async function(id) {
   }
 
   try {
-    const payload = {name,role,type,cost,salary_type,monthly_salary,special_cost};
+    const payload = {name,role,type,cost,salary_type,monthly_salary,special_cost,joining_date};
     if(id) { await sbPatch(`resources?id=eq.${id}`,payload); }
     else   { await sbPost('resources',payload); }
     await loadAll(); closeM(); render(); toast(id?'Resource updated':'Resource added');
@@ -985,8 +1159,11 @@ function renderAtt() {
         html+=`<div class="att-cell" data-v="H" title="${label}">H</div>`;
       } else {
         const k=attK(r.id,curY,curM,d);
-        const v=S.attendance[k]?.status||'';
-        html+=`<div class="att-cell" data-v="${v}" onclick="cycleAtt('${r.id}',${curY},${curM},${d})" title="${r.name} – Day ${d}">${v}</div>`;
+        const rec=S.attendance[k];
+        const v=rec?.status||'';
+        const displayV = v==='A' ? (rec.leave_type||'A') : v;
+        const tip = v==='A' ? `${r.name} – Day ${d} – Absent (${rec.leave_type||'unspecified'})` : `${r.name} – Day ${d}`;
+        html+=`<div class="att-cell" data-v="${v==='A'?'A':v}" onclick="openAttChooser('${r.id}',${curY},${curM},${d})" title="${tip}">${displayV}</div>`;
       }
     }
   });
@@ -994,21 +1171,46 @@ function renderAtt() {
   g.innerHTML=html;
 }
 
-window.cycleAtt = async function(rid,y,m,d) {
-  // Guard: never allow toggling on Sundays or public holidays — those are automatic
+window.openAttChooser = function(rid,y,m,d){
   const isSun = new Date(y,m-1,d).getDay()===0;
-  if(isSun || S.holidays[holidayKey(y,m,d)]) return;
+  if(isSun || S.holidays[holidayKey(y,m,d)]) return; // never editable — automatic holiday
 
-  const k=attK(rid,y,m,d), cur=S.attendance[k]?.status||'';
-  const next=STATUSES[(STATUSES.indexOf(cur)+1)%STATUSES.length];
+  const r = S.resources.find(x=>x.id===rid);
+  const k = attK(rid,y,m,d);
+  const cur = S.attendance[k];
+  const curStatus = cur?.status||'';
+  const curType = cur?.leave_type||'';
+  const dateLbl = new Date(y,m-1,d).toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+  const elOk = isELEligible(r,y,m);
+
+  const btn=(label,active,onclick,disabled)=>`<button class="btn ${active?'btn-primary':''}" style="width:100%;justify-content:flex-start;margin-bottom:6px" ${disabled?'disabled title="Not eligible for EL yet"':''} onclick="${disabled?'':onclick}">${label}</button>`;
+
+  showM(`<div class="modal-title">${r?.name||''} — ${dateLbl}</div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:14px">Choose the attendance status for this day.</div>
+    ${btn('✓ Present', curStatus==='P', `setAtt('${rid}',${y},${m},${d},'P',null)`)}
+    ${btn('◐ Half-day', curStatus==='HF', `setAtt('${rid}',${y},${m},${d},'HF',null)`)}
+    <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px">Absent — pick leave type</div>
+    ${btn('Casual Leave (CL)', curStatus==='A'&&curType==='CL', `setAtt('${rid}',${y},${m},${d},'A','CL')`)}
+    ${btn('Sick Leave (SL)', curStatus==='A'&&curType==='SL', `setAtt('${rid}',${y},${m},${d},'A','SL')`)}
+    ${btn('Earned Leave (EL)'+(elOk?'':' — not eligible yet'), curStatus==='A'&&curType==='EL', `setAtt('${rid}',${y},${m},${d},'A','EL')`, !elOk)}
+    ${btn('Loss of Pay (LOP / unpaid)', curStatus==='A'&&curType==='LOP', `setAtt('${rid}',${y},${m},${d},'A','LOP')`)}
+    <div class="modal-footer">
+      <button class="btn" onclick="closeM()">Cancel</button>
+      ${curStatus?`<button class="btn btn-danger" onclick="setAtt('${rid}',${y},${m},${d},'',null)">Clear entry</button>`:''}
+    </div>`);
+};
+
+window.setAtt = async function(rid,y,m,d,status,leave_type){
+  const k=attK(rid,y,m,d);
   try {
-    if(next==='') {
+    if(status===''){
       if(S.attendance[k]) await sbDelete(`attendance?resource_id=eq.${rid}&year=eq.${y}&month=eq.${m}&day=eq.${d}`);
     } else {
-      if(S.attendance[k]) await sbPatch(`attendance?resource_id=eq.${rid}&year=eq.${y}&month=eq.${m}&day=eq.${d}`,{status:next});
-      else                await sbPost('attendance',{resource_id:rid,year:y,month:m,day:d,status:next});
+      const payload={status,leave_type};
+      if(S.attendance[k]) await sbPatch(`attendance?resource_id=eq.${rid}&year=eq.${y}&month=eq.${m}&day=eq.${d}`,payload);
+      else                await sbPost('attendance',{resource_id:rid,year:y,month:m,day:d,...payload});
     }
-    await loadAll(); renderAtt();
+    await loadAll(); closeM(); render();
   } catch(e){ alert('Error: '+e.message); }
 };
 
@@ -1385,6 +1587,35 @@ function renderLeaves(){
   const y = curY;
   document.getElementById('lv-year-label').textContent = y;
   const employees = S.resources.filter(r=>r.type==='Employee');
+  const asOfLbl = `${MONTHS[curM-1]} ${curY}`;
+  document.getElementById('lv-asof-label').textContent = asOfLbl;
+
+  // Balance Overview: CL / SL / EL entitlement vs used vs remaining, as of curY/curM
+  const balTb = document.getElementById('lv-bal-tb');
+  if(!employees.length){
+    balTb.innerHTML = `<tr><td colspan="11"><div class="empty"><div class="empty-ico">🌴</div><div class="empty-txt">No employees yet.</div></div></td></tr>`;
+  } else {
+    balTb.innerHTML = employees.map(r=>{
+      if(!r.joining_date){
+        return `<tr><td class="td-main">${r.name}</td><td colspan="10" style="color:var(--amber)">Set a joining date in Resources to calculate leave balances</td></tr>`;
+      }
+      const b = leaveBalance(r,curY,curM);
+      const cellStyle='text-align:center';
+      return `<tr>
+        <td class="td-main">${r.name}</td>
+        <td class="td-mono" style="${cellStyle}">${b.cl.entitlement}</td>
+        <td class="td-mono" style="${cellStyle}">${b.cl.used}</td>
+        <td class="td-mono" style="${cellStyle};font-weight:700;color:${b.cl.remaining>0?'var(--green)':'var(--red)'}">${b.cl.remaining}</td>
+        <td class="td-mono" style="${cellStyle}">${b.sl.entitlement}</td>
+        <td class="td-mono" style="${cellStyle}">${b.sl.used}</td>
+        <td class="td-mono" style="${cellStyle};font-weight:700;color:${b.sl.remaining>0?'var(--green)':'var(--red)'}">${b.sl.remaining}</td>
+        <td class="td-mono" style="${cellStyle}">${b.el.entitlement}${b.el.entitlement>=45?' <span class="badge b-Hol" style="padding:1px 5px">cap</span>':''}</td>
+        <td class="td-mono" style="${cellStyle}">${b.el.used}</td>
+        <td class="td-mono" style="${cellStyle};font-weight:700;color:${b.el.remaining>0?'var(--green)':'var(--red)'}">${b.el.remaining}</td>
+        <td class="td-mono" style="${cellStyle};color:var(--red)">${b.lop.used}</td>
+      </tr>`;
+    }).join('');
+  }
 
   // Monthly breakdown table: rows = employees, cols = Jan..Dec
   const thead = document.querySelector('#lv-month-table thead');
@@ -1426,6 +1657,192 @@ function renderLeaves(){
       <td class="td-mono" style="font-weight:700;text-align:center">${total}</td>
     </tr>`;
   }).join('');
+}
+
+// ── PAYROLL / SALARY SLIPS ────────────────────────────────
+function renderPayroll(){
+  document.getElementById('pr-month-label').textContent = `${MONTHS[curM-1]} ${curY}`;
+  const employees = S.resources.filter(r=>r.type==='Employee');
+  const days = dim(curY,curM);
+
+  const rows = employees.map(r=>{
+    let present=0, half=0;
+    for(let d=1; d<=days; d++){
+      const isSun = new Date(curY,curM-1,d).getDay()===0;
+      const hol = S.holidays[holidayKey(curY,curM,d)];
+      if(isSun||hol) continue;
+      const st = S.attendance[attK(r.id,curY,curM,d)]?.status;
+      if(st==='P') present++;
+      else if(st==='HF') half++;
+    }
+    const brk = r.joining_date ? monthLeaveBreakdown(r,curY,curM) : {cl:0,sl:0,el:0,lopExplicit:0,clOverflow:0,slOverflow:0,elOverflow:0,totalLOPDays:0};
+    const gross = r.salary_type==='monthly' ? (r.monthly_salary||0) : dailyCostFor(r,curY,curM)*workingDaysInMonth(curY,curM);
+    const perDay = dailyCostFor(r,curY,curM);
+    const deduction = (brk.totalLOPDays + half*0.5) * perDay;
+    const net = gross - deduction;
+    return {r, present, half, brk, gross, deduction, net, perDay};
+  });
+
+  const totGross = rows.reduce((s,x)=>s+x.gross,0);
+  const totDed = rows.reduce((s,x)=>s+x.deduction,0);
+  const totNet = rows.reduce((s,x)=>s+x.net,0);
+
+  const mc=(lbl,val,c)=>`<div class="m-card" style="--c:${c}"><div class="m-label">${lbl}</div><div class="m-val" style="color:${c}">${val}</div></div>`;
+  document.getElementById('pr-metrics').innerHTML =
+    mc('Total gross',fmt(totGross),'var(--blue)')+
+    mc('Total deductions',fmt(totDed),'var(--red)')+
+    mc('Total to credit',fmt(totNet),'var(--green)')+
+    mc('Employees',employees.length,'var(--accent)');
+
+  document.getElementById('pr-tb').innerHTML = !rows.length
+    ? `<tr><td colspan="11"><div class="empty"><div class="empty-ico">🧾</div><div class="empty-txt">No employees yet.</div></div></td></tr>`
+    : rows.map(({r,present,half,brk,gross,deduction,net})=>`<tr>
+        <td class="td-main">${r.name}</td>
+        <td class="td-mono" style="text-align:center">${present}</td>
+        <td class="td-mono" style="text-align:center">${half||'—'}</td>
+        <td class="td-mono" style="text-align:center">${brk.cl||'—'}</td>
+        <td class="td-mono" style="text-align:center">${brk.sl||'—'}</td>
+        <td class="td-mono" style="text-align:center">${brk.el||'—'}</td>
+        <td class="td-mono" style="text-align:center;color:${brk.totalLOPDays>0?'var(--red)':'inherit'}">${brk.totalLOPDays||'—'}</td>
+        <td class="td-mono">${fmt(gross)}</td>
+        <td class="td-mono" style="color:var(--red)">${deduction>0?fmt(deduction):'—'}</td>
+        <td class="td-mono" style="font-weight:700;color:var(--green)">${fmt(net)}</td>
+        <td><button class="btn btn-ghost btn-sm" onclick="openSalarySlip('${r.id}')">View slip</button></td>
+      </tr>`).join('');
+
+  document.getElementById('pr-tot-row').innerHTML = `
+    <td class="td-main">Total</td><td colspan="6"></td>
+    <td class="td-mono">${fmt(totGross)}</td>
+    <td class="td-mono" style="color:var(--red)">${fmt(totDed)}</td>
+    <td class="td-mono" style="font-weight:700;color:var(--green)">${fmt(totNet)}</td><td></td>`;
+}
+
+window.openSalarySlip = function(rid){
+  const r = S.resources.find(x=>x.id===rid);
+  const y=curY, m=curM, days=dim(y,m);
+  let present=0, half=0, absentCount=0;
+  for(let d=1; d<=days; d++){
+    const isSun = new Date(y,m-1,d).getDay()===0;
+    const hol = S.holidays[holidayKey(y,m,d)];
+    if(isSun||hol) continue;
+    const st = S.attendance[attK(r.id,y,m,d)]?.status;
+    if(st==='P') present++;
+    else if(st==='HF') half++;
+    else if(st==='A') absentCount++;
+  }
+  const wd = workingDaysInMonth(y,m);
+  const brk = r.joining_date ? monthLeaveBreakdown(r,y,m) : {cl:0,sl:0,el:0,lopExplicit:0,clOverflow:0,slOverflow:0,elOverflow:0,totalLOPDays:0};
+  const bal = r.joining_date ? leaveBalance(r,y,m) : null;
+  const gross = r.salary_type==='monthly' ? (r.monthly_salary||0) : dailyCostFor(r,y,m)*wd;
+  const perDay = dailyCostFor(r,y,m);
+  const deduction = (brk.totalLOPDays + half*0.5) * perDay;
+  const net = gross - deduction;
+
+  showM(`
+    <div id="slip-print-area">
+      <div style="text-align:center;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border)">
+        <div style="font-size:16px;font-weight:700">Salary Slip</div>
+        <div style="font-size:12px;color:var(--text3)">${MONTHS[m-1]} ${y}</div>
+      </div>
+      <div class="f-row" style="margin-bottom:14px">
+        <div><div class="prev-lbl">Employee</div><div style="font-weight:600">${r.name}</div></div>
+        <div><div class="prev-lbl">Role</div><div>${r.role||'—'}</div></div>
+        <div><div class="prev-lbl">Date of joining</div><div>${r.joining_date||'—'}</div></div>
+        <div><div class="prev-lbl">Working days this month</div><div>${wd}</div></div>
+      </div>
+      <div style="border-top:1px solid var(--border);padding-top:12px;margin-bottom:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Attendance</div>
+        <div class="f-row">
+          <div><div class="prev-lbl">Present</div><div class="td-mono">${present}</div></div>
+          <div><div class="prev-lbl">Half-day</div><div class="td-mono">${half}</div></div>
+          <div><div class="prev-lbl">CL taken</div><div class="td-mono">${brk.cl}</div></div>
+          <div><div class="prev-lbl">SL taken</div><div class="td-mono">${brk.sl}</div></div>
+        </div>
+        <div class="f-row">
+          <div><div class="prev-lbl">EL taken</div><div class="td-mono">${brk.el}</div></div>
+          <div><div class="prev-lbl">LOP days</div><div class="td-mono" style="color:${brk.totalLOPDays>0?'var(--red)':'inherit'}">${brk.totalLOPDays}</div></div>
+          <div></div><div></div>
+        </div>
+      </div>
+      ${bal?`<div style="border-top:1px solid var(--border);padding-top:12px;margin-bottom:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Leave balance (as of this month)</div>
+        <div class="f-row">
+          <div><div class="prev-lbl">CL remaining</div><div class="td-mono">${bal.cl.remaining} / ${bal.cl.entitlement}</div></div>
+          <div><div class="prev-lbl">SL remaining</div><div class="td-mono">${bal.sl.remaining} / ${bal.sl.entitlement}</div></div>
+          <div><div class="prev-lbl">EL remaining</div><div class="td-mono">${bal.el.remaining} / ${bal.el.entitlement}</div></div>
+          <div></div>
+        </div>
+      </div>`:''}
+      <div style="border-top:1px solid var(--border);padding-top:12px">
+        <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Earnings</div>
+        <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Gross salary</span><span class="td-mono">${fmt(gross)}</span></div>
+        <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px;color:var(--red)"><span>Deduction (LOP + half-day)</span><span class="td-mono">-${fmt(deduction)}</span></div>
+        <div class="row" style="display:flex;justify-content:space-between;font-weight:700;font-size:15px;padding-top:8px;border-top:1px solid var(--border)"><span>Net pay</span><span class="td-mono" style="color:var(--green)">${fmt(net)}</span></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeM()">Close</button>
+      <button class="btn btn-primary" onclick="window.print()">🖨 Print / Save as PDF</button>
+    </div>`);
+};
+
+// ── LEAVE POLICY ──────────────────────────────────────────
+function renderPolicy(){
+  const el = document.getElementById('policy-content');
+  if(el.dataset.rendered) return;
+  el.dataset.rendered = '1';
+  el.innerHTML = `
+    <div style="text-align:center;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid var(--border)">
+      <div style="font-size:18px;font-weight:700;color:var(--text)">Global Net Services</div>
+      <div style="font-size:14px;color:var(--text2)">Employee Leave Policy</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:4px">Effective 01/07/2026 · Leave Year: 1 January – 31 December</div>
+    </div>
+
+    <h3 style="color:var(--text);font-size:14px;margin-bottom:8px">1. Purpose &amp; Applicability</h3>
+    <p style="margin-bottom:16px">This policy sets out leave entitlements for all full-time employees, in line with the Tamil Nadu Shops and Establishments Act, 1947. No employee receives less than what is stated here.</p>
+
+    <h3 style="color:var(--text);font-size:14px;margin-bottom:8px">2. Leave Year</h3>
+    <p style="margin-bottom:16px">Runs 1 January – 31 December. CL and SL balances reset every 1 January. EL, once eligible, accumulates across years up to the cap below.</p>
+
+    <h3 style="color:var(--text);font-size:14px;margin-bottom:8px">3. Types of Leave &amp; Entitlement</h3>
+    <div class="t-wrap" style="margin-bottom:16px"><table>
+      <thead><tr><th>Leave Type</th><th>Days/Year</th><th>Eligibility</th><th>Carry Forward</th></tr></thead>
+      <tbody>
+        <tr><td class="td-main">Casual Leave (CL)</td><td>12</td><td>From date of joining</td><td>Lapses at year-end</td></tr>
+        <tr><td class="td-main">Sick Leave (SL)</td><td>12</td><td>From date of joining</td><td>Lapses at year-end</td></tr>
+        <tr><td class="td-main">Earned Leave (EL)</td><td>12</td><td>After 12 months continuous service</td><td>Accumulates up to 45 days; encashed beyond</td></tr>
+      </tbody>
+    </table></div>
+
+    <h4 style="color:var(--text);font-size:13px;margin-bottom:6px">3.1 Casual Leave</h4>
+    <p style="margin-bottom:14px">12 days/year, pro-rated for mid-year joiners. Fully paid. Lapses 31 December — no carry-forward, no encashment.</p>
+
+    <h4 style="color:var(--text);font-size:13px;margin-bottom:6px">3.2 Sick Leave</h4>
+    <p style="margin-bottom:14px">12 days/year, pro-rated for mid-year joiners. Fully paid. A medical certificate may be requested for 2+ consecutive days. Lapses 31 December.</p>
+
+    <h4 style="color:var(--text);font-size:13px;margin-bottom:6px">3.3 Earned Leave</h4>
+    <p style="margin-bottom:16px">12 days/year, starting only after 12 months of continuous service. Fully paid. Carries forward up to 45 days; excess is encashed at current basic pay (January payroll). Remaining balance is encashed in full on exit.</p>
+
+    <h3 style="color:var(--text);font-size:14px;margin-bottom:8px">4. National &amp; Festival Holidays</h3>
+    <p style="margin-bottom:16px">Paid holidays on dates notified annually by the Tamil Nadu Government — tracked in the Holidays page of this portal.</p>
+
+    <h3 style="color:var(--text);font-size:14px;margin-bottom:8px">5. Weekly Off</h3>
+    <p style="margin-bottom:16px">Monday to Saturday working week; Sunday is the mandatory paid weekly off.</p>
+
+    <h3 style="color:var(--text);font-size:14px;margin-bottom:8px">6. Mid-Year Joiners and Leavers</h3>
+    <p style="margin-bottom:16px">CL/SL pro-rated by joining date. EL eligibility begins only after 12 months of service. On exit, unavailed EL is encashed; unavailed CL/SL lapses.</p>
+
+    <h3 style="color:var(--text);font-size:14px;margin-bottom:8px">7. Maternity Leave</h3>
+    <p style="margin-bottom:16px">Governed by the Maternity Benefit Act, 1961 — 26 weeks paid leave for the first two children (12 weeks for subsequent children), separate from CL/SL/EL.</p>
+
+    <h3 style="color:var(--text);font-size:14px;margin-bottom:8px">8. Applying for Leave</h3>
+    <p style="margin-bottom:16px">CL/planned EL: apply at least 3 working days in advance, subject to approval. SL: inform as early as possible; documentation may follow. Given team size, only 1 employee is ordinarily approved for planned leave on the same day — emergency/sick leave is exempt.</p>
+
+    <h3 style="color:var(--text);font-size:14px;margin-bottom:8px">9. Leave Records</h3>
+    <p style="margin-bottom:8px">A leave register recording CL, SL, and EL balances is maintained and updated monthly — see the Leave Summary page of this portal. Employees may request their balance at any time.</p>
+
+    <p style="font-size:11px;color:var(--text3);font-style:italic;margin-top:20px;padding-top:14px;border-top:1px solid var(--border)">This policy reflects statutory minimums under the Tamil Nadu Shops and Establishments Act, 1947, and may be updated to comply with future amendments to applicable law.</p>
+  `;
 }
 
 // ── Modal ─────────────────────────────────────────────────
