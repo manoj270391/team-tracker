@@ -689,6 +689,8 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 // ── Globals ───────────────────────────────────────────────
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -856,11 +858,13 @@ function isELEligible(r, y, m){
   if(eligAbs==null) return false;
   return absMonth(y,m) >= Math.max(eligAbs, (y===2026&&m>=1)?TRACKING_START_ABS:0);
 }
-// Cumulative EL entitlement from eligibility through target month (across years, no annual reset)
+// Cumulative EL entitlement from eligibility through year-end of year Y (across years, no
+// annual reset) - full year's credit is available upfront within a given year, matching
+// how CL/SL now work, rather than being paced out 1/month.
 function elEntitlementThroughMonth(r, y, m){
   const eligAbs = elEligibleAbs(r);
   if(eligAbs==null) return 0;
-  const targetAbs = absMonth(y,m);
+  const targetAbs = absMonth(y,12);
   const trackingFloor = TRACKING_START_ABS; // never accrue before July 2026, no data exists earlier
   const startAbs = Math.max(eligAbs, trackingFloor);
   return Math.max(0, accrualMonths(startAbs, targetAbs));
@@ -2326,9 +2330,8 @@ function salarySlipMarkup(d, editableTax){
     <div class="slip-title">SALARY SLIP — ${MONTHS[m-1].toUpperCase()} ${y}</div>
     <table class="slip-info-tb">
       <tr><td class="lbl">Employee Name</td><td>${r.name}</td><td class="lbl">Employee ID</td><td>${r.employee_code||'—'}</td></tr>
-      <tr><td class="lbl">Designation</td><td>${r.role||'—'}</td><td class="lbl">Date of Joining</td><td>${r.joining_date||'—'}</td></tr>
-      <tr><td class="lbl">Pay Period</td><td>${MONTHS[m-1]} ${y}</td><td class="lbl">Pay Date</td><td>${payDateCell}</td></tr>
-      <tr><td class="lbl">Bank A/C No.</td><td>${r.bank_last4?('XXXXXXXX'+r.bank_last4):'—'}</td><td class="lbl">Working Days</td><td>${wd}</td></tr>
+      <tr><td class="lbl">Designation</td><td>${r.role||'—'}</td><td class="lbl">Pay Period</td><td>${MONTHS[m-1]} ${y}</td></tr>
+      <tr><td class="lbl">Bank A/C No.</td><td>${r.bank_last4?('XXXXXXXX'+r.bank_last4):'—'}</td><td class="lbl">Pay Date</td><td>${payDateCell}</td></tr>
       <tr><td class="lbl">Days in Month</td><td>${d.days}</td><td class="lbl">LOP Days</td><td>${brk.totalLOPDays||0}</td></tr>
     </table>
     <table class="slip-ed-tb">
@@ -2354,7 +2357,7 @@ window.openSalarySlip = function(rid){
     <div id="slip-print-area">${salarySlipMarkup(d, true)}</div>
     <div class="modal-footer">
       <button class="btn" onclick="closeM()">Close</button>
-      <button class="btn btn-primary" onclick="printSalarySlipPDF('${rid}',${curY},${curM})">🖨 Print / Save as PDF</button>
+      <button class="btn btn-primary" onclick="printSalarySlipPDF('${rid}',${curY},${curM},this)">⬇ Download PDF</button>
     </div>`);
 };
 
@@ -2396,40 +2399,67 @@ window.savePayDate = async function(rid, y, m){
 // Opens a clean, standalone window with just the slip (white background, no app chrome),
 // so printing/"Save as PDF" can't be affected by the main app's modal/overlay layout at
 // all. Also sets the window title to control the suggested PDF filename.
-window.printSalarySlipPDF = function(rid, y, m){
+window.printSalarySlipPDF = async function(rid, y, m, btn){
   const d = salarySlipData(rid, y, m);
   const filename = `${d.r.name} Salary Slip - ${MONTHS[m-1]} ${y}`;
-  const w = window.open('', '_blank', 'width=850,height=1100');
-  if(!w){ alert('Please allow pop-ups for this site to print the salary slip.'); return; }
-  w.document.write(`<!DOCTYPE html><html><head><title>${filename}</title><meta charset="utf-8">
+  const origLabel = btn ? btn.textContent : null;
+  if(btn){ btn.disabled = true; btn.textContent = 'Generating PDF…'; }
+
+  const wrapper = document.createElement('div');
+  wrapper.style.cssText = 'position:fixed;left:-9999px;top:0;width:800px;';
+  wrapper.innerHTML = `<div class="pdf-slip-root">${salarySlipMarkup(d, false)}</div>
     <style>
-      * { box-sizing: border-box; }
-      body { font-family: Arial, Helvetica, sans-serif; color:#1a1a1a; margin: 28px; font-size: 13px; }
-      table { width:100%; border-collapse: collapse; }
-      .slip-hd-tb td { vertical-align: middle; padding: 0 0 14px 0; }
-      .slip-logo-cell { width: 130px; }
-      .slip-company-name { font-size: 17px; font-weight: 700; }
-      .slip-company-addr { font-size: 11.5px; color: #444; margin-top: 2px; }
-      .slip-title { text-align:center; font-weight:700; font-size:14px; background:#eef1f5; padding:8px; border:1px solid #ccc; margin-bottom:14px; }
-      .slip-info-tb { border:1px solid #ccc; margin-bottom:14px; }
-      .slip-info-tb td { border:1px solid #ccc; padding:6px 10px; font-size:12.5px; }
-      .slip-info-tb td.lbl { font-weight:700; background:#f7f8fa; width:20%; }
-      .slip-ed-tb { border:1px solid #ccc; margin-bottom:14px; }
-      .slip-ed-tb th { background:#eef1f5; border:1px solid #ccc; padding:7px 10px; text-align:left; font-size:12.5px; }
-      .slip-ed-tb td { border:1px solid #ccc; padding:7px 10px; font-size:12.5px; }
-      .slip-ed-tb td:nth-child(2), .slip-ed-tb td:nth-child(4) { text-align:right; font-family: monospace; }
-      .slip-ed-tb tr.tot td { font-weight:700; background:#f7f8fa; }
-      .slip-net-tb { border:2px solid #333; margin-bottom:14px; }
-      .slip-net-tb td { padding:12px; text-align:center; }
-      .slip-net-amt { font-size:16px; font-weight:700; }
-      .slip-net-words { font-size:12px; font-style:italic; color:#333; margin-top:4px; }
-      .slip-footnote { text-align:center; font-size:11px; font-style:italic; color:#555; margin-top:10px; }
-      @media print { body { margin: 10mm; } }
-    </style></head><body>${salarySlipMarkup(d, false)}</body></html>`);
-  w.document.close();
-  w.onload = () => { w.focus(); w.print(); };
-  // Fallback in case onload doesn't fire (some browsers with document.write)
-  setTimeout(() => { try { w.focus(); w.print(); } catch{} }, 400);
+      .pdf-slip-root { background:#fff; color:#1a1a1a; padding:28px; font-family:Arial,Helvetica,sans-serif; font-size:13px; }
+      .pdf-slip-root table { width:100%; border-collapse: collapse; }
+      .pdf-slip-root .slip-hd-tb td { vertical-align: middle; padding: 0 0 14px 0; border:none; }
+      .pdf-slip-root .slip-logo-cell { width: 130px; }
+      .pdf-slip-root .slip-company-name { font-size: 17px; font-weight: 700; }
+      .pdf-slip-root .slip-company-addr { font-size: 11.5px; color: #444; margin-top: 2px; }
+      .pdf-slip-root .slip-title { text-align:center; font-weight:700; font-size:14px; background:#eef1f5; padding:8px; border:1px solid #ccc; margin-bottom:14px; }
+      .pdf-slip-root .slip-info-tb { border:1px solid #ccc; margin-bottom:14px; }
+      .pdf-slip-root .slip-info-tb td { border:1px solid #ccc; padding:6px 10px; font-size:12.5px; }
+      .pdf-slip-root .slip-info-tb td.lbl { font-weight:700; background:#f7f8fa; width:20%; }
+      .pdf-slip-root .slip-ed-tb { border:1px solid #ccc; margin-bottom:14px; }
+      .pdf-slip-root .slip-ed-tb th { background:#eef1f5; border:1px solid #ccc; padding:7px 10px; text-align:left; font-size:12.5px; }
+      .pdf-slip-root .slip-ed-tb td { border:1px solid #ccc; padding:7px 10px; font-size:12.5px; }
+      .pdf-slip-root .slip-ed-tb td:nth-child(2), .pdf-slip-root .slip-ed-tb td:nth-child(4) { text-align:right; font-family: monospace; }
+      .pdf-slip-root .slip-ed-tb tr.tot td { font-weight:700; background:#f7f8fa; }
+      .pdf-slip-root .slip-net-tb { border:2px solid #333; margin-bottom:6px; }
+      .pdf-slip-root .slip-net-tb td { padding:12px; text-align:center; border:none; }
+      .pdf-slip-root .slip-net-amt { font-size:16px; font-weight:700; }
+      .pdf-slip-root .slip-net-words { font-size:12px; font-style:italic; color:#333; margin-top:4px; }
+      .pdf-slip-root .slip-footnote { text-align:center; font-size:11px; font-style:italic; color:#555; margin-top:10px; }
+    </style>`;
+  document.body.appendChild(wrapper);
+
+  try {
+    const target = wrapper.querySelector('.pdf-slip-root');
+    const canvas = await html2canvas(target, { scale: 2, backgroundColor: '#ffffff' });
+    const imgData = canvas.toDataURL('image/png');
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit: 'pt', format: 'a4' });
+    const pageWidth = pdf.internal.pageSize.getWidth();
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const margin = 20;
+    const maxWidth = pageWidth - margin*2;
+    const maxHeight = pageHeight - margin*2;
+    let imgWidth = maxWidth;
+    let imgHeight = (canvas.height * imgWidth) / canvas.width;
+    if(imgHeight > maxHeight){
+      const scaleDown = maxHeight / imgHeight;
+      imgHeight *= scaleDown;
+      imgWidth *= scaleDown;
+    }
+    pdf.addImage(imgData, 'PNG', margin, margin, imgWidth, imgHeight);
+    pdf.setDisplayMode('100%', 'continuous', 'UseNone'); // open at 100% zoom by default
+    pdf.save(`${filename}.pdf`);
+  } catch(e) {
+    alert('Could not generate PDF: '+e.message);
+  } finally {
+    document.body.removeChild(wrapper);
+    if(btn){ btn.disabled = false; btn.textContent = origLabel; }
+  }
 };
 
 // ── LEAVE POLICY ──────────────────────────────────────────
