@@ -1,5 +1,15 @@
 {
   "version": 2,
-  "builds": [{ "src": "index.html", "use": "@vercel/static" }],
-  "routes": [{ "src": "/(.*)", "dest": "/index.html" }]
+  "builds": [
+    { "src": "index.html", "use": "@vercel/static" },
+    { "src": "api/scan.js", "use": "@vercel/node" },
+    { "src": "api/tick.js", "use": "@vercel/node" },
+    { "src": "api/proxy.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/api/scan", "dest": "/api/scan.js" },
+    { "src": "/api/tick", "dest": "/api/tick.js" },
+    { "src": "/api/proxy", "dest": "/api/proxy.js" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ]
 }

@@ -1,0 +1,11 @@
+{
+  "name": "team-tracker",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Team Tracker - static frontend + Vercel serverless functions for the document scanner feature.",
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "jszip": "^3.10.1",
+    "pdf-lib": "^1.17.1"
+  }
+}

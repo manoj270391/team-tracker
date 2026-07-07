@@ -190,6 +190,8 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
 }
 .f-input:focus { outline: none; border-color: var(--accent); }
 .f-input::placeholder { color: var(--text3); }
+.sc-opt { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text2); cursor:pointer; border:1px solid var(--border); border-radius:var(--r-sm); padding:8px 12px; background:var(--bg3); }
+.sc-opt:has(input:checked) { border-color:var(--accent); color:var(--text); background:var(--accentt); }
 .f-hint { font-size: 11px; color: var(--text3); line-height: 1.6; margin-top: 2px; }
 
 /* ── Attendance ──────────────────────────────────────────── */
@@ -205,7 +207,7 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
 .att-cell:hover { transform: scale(1.12); border-color: var(--border2); }
 .att-cell[data-v="P"]  { background:rgba(54,211,153,.15); border-color:rgba(54,211,153,.5); color:var(--green); }
 .att-cell[data-v="A"]  { background:rgba(248,113,113,.15); border-color:rgba(248,113,113,.5); color:var(--red); font-size:8px; letter-spacing:-0.02em; }
-.att-cell[data-v="HF"] { background:rgba(251,191,36,.15); border-color:rgba(251,191,36,.5); color:var(--amber); font-size:9px; }
+.att-cell[data-v="HF"] { background:rgba(251,191,36,.15); border-color:rgba(251,191,36,.5); color:var(--amber); font-size:8px; letter-spacing:-0.02em; }
 .att-cell[data-v="H"]  { background:rgba(167,139,250,.15); border-color:rgba(167,139,250,.5); color:var(--purple); cursor:default; }
 .att-cell[data-v="H"]:hover { transform:none; }
 
@@ -402,6 +404,7 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
         <div class="sb-section-label">Manage</div>
         <button class="sb-item" onclick="nav('worklog')" data-p="worklog"><span class="sb-icon">📋</span>Work log</button>
         <button class="sb-item" onclick="nav('attendance')" data-p="attendance"><span class="sb-icon">🗓</span>Attendance</button>
+        <button class="sb-item" onclick="nav('scanner')" data-p="scanner"><span class="sb-icon">🔎</span>Document Scanner</button>
       </div>
       <div>
         <div class="sb-section-label">Setup</div>
@@ -441,6 +444,7 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
 
       <!-- DASHBOARD -->
       <div id="p-dashboard" class="page active">
+        <div id="d-el-banner"></div>
         <div class="metrics" id="d-metrics"></div>
         <div class="grid-2">
           <div class="card"><div class="card-hd"><div class="card-title">Revenue by resource</div></div><div class="card-body"><div style="position:relative;height:190px"><canvas id="c-res"></canvas></div></div></div>
@@ -514,6 +518,76 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
         </div>
       </div>
 
+      <!-- DOCUMENT SCANNER -->
+      <div id="p-scanner" class="page">
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Scan a client link for files</div></div>
+          <div class="card-body">
+            <div class="f-group" style="margin-bottom:16px">
+              <div class="f-label">Website or page link</div>
+              <input class="f-input" id="sc-url" placeholder="https://client-site.com/downloads">
+            </div>
+
+            <div class="f-row">
+              <div>
+                <div class="f-label" style="margin-bottom:8px">Scan scope</div>
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  <label class="sc-opt"><input type="radio" name="sc-scope" value="single"> Only this exact page</label>
+                  <label class="sc-opt"><input type="radio" name="sc-scope" value="site" checked> Entire website (same domain)</label>
+                  <label class="sc-opt"><input type="radio" name="sc-scope" value="subdomains"> Entire website + subdomains</label>
+                </div>
+              </div>
+              <div>
+                <div class="f-label" style="margin-bottom:8px">Scan for</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                  <label class="sc-opt"><input type="checkbox" name="sc-type" value="pdf" checked> PDF</label>
+                  <label class="sc-opt"><input type="checkbox" name="sc-type" value="doc" checked> Word</label>
+                  <label class="sc-opt"><input type="checkbox" name="sc-type" value="ppt" checked> PowerPoint</label>
+                  <label class="sc-opt"><input type="checkbox" name="sc-type" value="xlsx" checked> Excel</label>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
+                  <div class="f-label" style="white-space:nowrap">Page cap</div>
+                  <input class="f-input" id="sc-maxpages" type="number" min="1" value="500" style="width:100px">
+                </div>
+                <label class="sc-opt" style="margin-top:10px"><input type="checkbox" id="sc-details" checked> Look up page/slide/sheet counts + file sizes (slower)</label>
+              </div>
+            </div>
+
+            <div id="sc-err" class="setup-err" style="margin-top:10px"></div>
+
+            <div style="display:flex;gap:10px;margin-top:16px">
+              <button class="btn btn-primary" id="sc-start-btn" onclick="startDocScan()">Start scan</button>
+              <button class="btn btn-ghost" id="sc-stop-btn" onclick="stopDocScan()" style="display:none">Stop</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" id="sc-results-card" style="display:none">
+          <div class="card-hd">
+            <div style="display:flex;align-items:center;gap:10px">
+              <span class="badge" id="sc-status-badge">—</span>
+              <span style="color:var(--text2);font-size:12px" id="sc-website"></span>
+            </div>
+            <div style="display:flex;gap:22px;font-family:var(--mono);font-size:12px;color:var(--text2)">
+              <span>Pages crawled: <strong id="sc-pages" style="color:var(--text)">0</strong></span>
+              <span>Files found: <strong id="sc-files" style="color:var(--text)">0</strong></span>
+            </div>
+          </div>
+          <div class="card-body">
+            <div style="display:flex;gap:10px;margin-bottom:16px">
+              <button class="btn btn-ghost" id="sc-zip-btn" onclick="downloadScanZip()">Download all (.zip)</button>
+              <button class="btn btn-primary" id="sc-xlsx-btn" onclick="exportScanExcel()">Export review sheet (.xlsx)</button>
+            </div>
+            <div class="t-wrap"><table><thead><tr><th>File</th><th>Type</th><th>Pages</th><th>Size</th><th>Found on</th><th></th></tr></thead><tbody id="sc-tb"></tbody></table></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-title">Past scans</div></div>
+          <div class="t-wrap"><table><thead><tr><th>Website</th><th>Scope</th><th>Date</th><th>Pages crawled</th><th>Files found</th><th>Status</th></tr></thead><tbody id="sc-hist-tb"></tbody></table></div>
+        </div>
+      </div>
+
       <!-- DAILY VIEW -->
       <div id="p-daily" class="page"><div id="daily-body"></div></div>
 
@@ -555,10 +629,11 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
 
       <!-- PAYROLL -->
       <div id="p-payroll" class="page">
+        <div id="pr-el-card"></div>
         <div class="metrics" id="pr-metrics"></div>
         <div class="card">
           <div class="card-hd"><div class="card-title">Payroll summary — <span id="pr-month-label"></span></div></div>
-          <div class="t-wrap"><table><thead><tr><th>Employee</th><th>Present</th><th>Half-day</th><th>CL</th><th>SL</th><th>EL</th><th>LOP days</th><th>Gross (₹)</th><th>Deduction (₹)</th><th>Net Pay (₹)</th><th></th></tr></thead><tbody id="pr-tb"></tbody><tfoot><tr id="pr-tot-row"></tr></tfoot></table></div>
+          <div class="t-wrap"><table><thead><tr><th>Employee</th><th>Present</th><th>Half-day</th><th>CL</th><th>SL</th><th>EL</th><th>LOP days</th><th>Gross (₹)</th><th>EL Bonus (₹)</th><th>Deduction (₹)</th><th>Net Pay (₹)</th><th></th></tr></thead><tbody id="pr-tb"></tbody><tfoot><tr id="pr-tot-row"></tr></tfoot></table></div>
         </div>
       </div>
 
@@ -583,6 +658,9 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 // ── Globals ───────────────────────────────────────────────
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -596,7 +674,7 @@ function getISTDate(){
 }
 const now = getISTDate();
 let SB_URL = '', SB_KEY = '';
-let S = { resources:[], clients:[], attendance:{}, log:[], holidays:{} };
+let S = { resources:[], clients:[], attendance:{}, log:[], holidays:{}, elSettlements:[] };
 let cRes=null, cCli=null;
 let curM = now.getMonth()+1, curY = now.getFullYear();
 
@@ -685,21 +763,47 @@ function countLeaveType(r, type, throughY, throughM, sinceY, sinceM){
   const sinceAbs = (sinceY!=null) ? absMonth(sinceY,sinceM) : -Infinity;
   let n=0;
   Object.values(S.attendance).forEach(a=>{
-    if(a.resource_id!==r.id || a.status!=='A' || a.leave_type!==type) return;
+    if(a.resource_id!==r.id || a.leave_type!==type) return;
+    if(a.status!=='A' && a.status!=='HF') return; // HF only ever carries CL/SL type — see attendance chooser
     const abs=absMonth(a.year,a.month);
-    if(abs<=throughAbs && abs>=sinceAbs) n++;
+    if(abs<=throughAbs && abs>=sinceAbs) n += (a.status==='HF') ? 0.5 : 1;
   });
   return n;
 }
 
 // Full leave balance snapshot for a resource as of year/month (inclusive)
+// ── EL ANNUAL SETTLEMENT (Feb payout) ─────────────────────
+// Sum of all EL days ever cashed out for a resource, up to and including a given year
+function elSettledDaysUpTo(r, uptoYear){
+  return S.elSettlements
+    .filter(s=>s.resource_id===r.id && s.year<=uptoYear)
+    .reduce((sum,s)=>sum+Number(s.days),0);
+}
+function elSettlementRow(r, year){
+  return S.elSettlements.find(s=>s.resource_id===r.id && s.year===year) || null;
+}
+// EL accrued strictly WITHIN one calendar year (not cumulative)
+function elAccruedInYear(r, year){
+  return Math.max(0, elEntitlementThroughMonth(r,year,12) - elEntitlementThroughMonth(r,year-1,12));
+}
+function elUsedInYear(r, year){
+  return countLeaveType(r,'EL',year,12,year,1);
+}
+// Net EL days due for settlement for a completed year (before checking if already processed)
+function elSettlementDue(r, year){
+  if(!r.joining_date) return 0;
+  return Math.max(0, elAccruedInYear(r,year) - elUsedInYear(r,year));
+}
+
 function leaveBalance(r, y, m){
   const clEnt = clslEntitlementThroughMonth(r,y,m);
   const slEnt = clslEntitlementThroughMonth(r,y,m); // same formula, independent buckets
   const clUsed = countLeaveType(r,'CL',y,m,y,1); // within calendar year y only (resets)
   const slUsed = countLeaveType(r,'SL',y,m,y,1);
   const elEnt = Math.min(45, elEntitlementThroughMonth(r,y,m));
-  const elUsed = countLeaveType(r,'EL',y,m,null,null); // cumulative, no reset
+  const elUsedRaw = countLeaveType(r,'EL',y,m,null,null); // cumulative, no reset
+  const elSettled = elSettledDaysUpTo(r, y-1); // prior years' cashed-out days no longer count toward balance
+  const elUsed = elUsedRaw + elSettled;
   const lopTotal = countLeaveType(r,'LOP',y,m,y,1);
   return {
     cl:{ entitlement:clEnt, used:clUsed, remaining:Math.max(0,clEnt-clUsed) },
@@ -730,7 +834,7 @@ function monthLeaveBreakdown(r, y, m){
 
   const elEntThruMonth = Math.min(45, elEntitlementThroughMonth(r,y,m));
   const [py,pm] = m===1 ? [y-1,12] : [y,m-1];
-  const elUsedBeforeMonth = countLeaveType(r,'EL',py,pm,null,null);
+  const elUsedBeforeMonth = countLeaveType(r,'EL',py,pm,null,null) + elSettledDaysUpTo(r, y-1);
   const elAllowed = Math.max(0, elEntThruMonth - elUsedBeforeMonth);
   const elOverflow = Math.max(0, thisMonthEL - elAllowed);
 
@@ -813,12 +917,13 @@ async function launchApp() {
 }
 
 async function loadAll() {
-  const [res,cli,att,log,hol] = await Promise.all([
+  const [res,cli,att,log,hol,settle] = await Promise.all([
     sbGet('resources?order=created_at.asc'),
     sbGet('clients?order=created_at.asc'),
     sbGet('attendance?order=year.asc,month.asc,day.asc'),
     sbGet('worklog?order=date.desc,created_at.desc'),
-    sbGet('holidays?order=year.asc,month.asc,day.asc')
+    sbGet('holidays?order=year.asc,month.asc,day.asc'),
+    sbGet('el_settlements?order=year.asc')
   ]);
   S.resources = res||[];
   S.clients   = cli||[];
@@ -827,6 +932,7 @@ async function loadAll() {
   S.log = log||[];
   S.holidays = {};
   (hol||[]).forEach(h=>{ S.holidays[holidayKey(h.year,h.month,h.day)] = h; });
+  S.elSettlements = settle||[];
 }
 
 function setDbStatus(s) {
@@ -837,7 +943,7 @@ function setDbStatus(s) {
 }
 
 // ── Nav ───────────────────────────────────────────────────
-const PAGE_TITLES = {dashboard:'Dashboard',resources:'Resources',clients:'Clients',attendance:'Attendance',worklog:'Work log',daily:'Daily view',monthly:'Monthly summary',holidays:'Holidays',leaves:'Leave summary',payroll:'Payroll / Salary slips',policy:'Leave Policy'};
+const PAGE_TITLES = {dashboard:'Dashboard',resources:'Resources',clients:'Clients',attendance:'Attendance',worklog:'Work log',daily:'Daily view',monthly:'Monthly summary',holidays:'Holidays',leaves:'Leave summary',payroll:'Payroll / Salary slips',policy:'Leave Policy',scanner:'Document Scanner'};
 
 window.nav = function(p) {
   document.querySelectorAll('.page').forEach(x=>x.classList.remove('active'));
@@ -858,9 +964,12 @@ window.nav = function(p) {
   // Leave summary needs both month (as-of balance) and year (monthly/quarterly grid) — keep both visible
 
   if(p==='payroll'){
-    // Default to previous month — this is what you'd credit salaries for on the 1st
-    let pm=curM-1, py=curY;
-    if(pm<1){ pm=12; py=curY-1; }
+    // Always default to last calendar month relative to TODAY (not whatever
+    // month/year was last selected elsewhere in the app) — so this is reliable
+    // every time you open Payroll, especially first thing on the 1st.
+    const today = getISTDate();
+    let pm = today.getMonth()+1-1, py = today.getFullYear();
+    if(pm<1){ pm=12; py=py-1; }
     curM=pm; curY=py;
     document.getElementById('sel-m').value=curM;
     document.getElementById('sel-y').value=curY;
@@ -882,6 +991,192 @@ function render(p) {
   if(p==='leaves')     renderLeaves();
   if(p==='payroll')    renderPayroll();
   if(p==='policy')     renderPolicy();
+  if(p==='scanner')    renderScannerHistory();
+}
+
+// ── DOCUMENT SCANNER ───────────────────────────────────────
+const FILE_TYPE_LABELS = { pdf:'PDF', doc:'Word', ppt:'PowerPoint', xlsx:'Excel' };
+const SCAN_SCOPE_LABELS = { single:'Single page', site:'Whole site', subdomains:'Whole site + subdomains' };
+let scState = { scan:null, files:[], stopped:true, zipping:false };
+
+function scFmtBytes(b){
+  if(b===null||b===undefined) return '—';
+  if(b<1024) return b+' B';
+  const kb=b/1024; if(kb<1024) return kb.toFixed(0)+' KB';
+  const mb=kb/1024; if(mb<1024) return mb.toFixed(1)+' MB';
+  return (mb/1024).toFixed(2)+' GB';
+}
+function scFmtDate(iso){
+  if(!iso) return '—';
+  return new Date(iso).toLocaleString(undefined,{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+}
+
+window.startDocScan = async function() {
+  const url = document.getElementById('sc-url').value.trim();
+  const scope = document.querySelector('input[name="sc-scope"]:checked').value;
+  const fileTypes = Array.from(document.querySelectorAll('input[name="sc-type"]:checked')).map(x=>x.value);
+  const maxPages = parseInt(document.getElementById('sc-maxpages').value,10) || 500;
+  const fetchDetails = document.getElementById('sc-details').checked;
+  const errEl = document.getElementById('sc-err');
+  errEl.classList.remove('show'); errEl.textContent='';
+
+  if(!url){ errEl.textContent='Paste a URL to scan first.'; errEl.classList.add('show'); return; }
+  if(fileTypes.length===0){ errEl.textContent='Pick at least one file type.'; errEl.classList.add('show'); return; }
+
+  document.getElementById('sc-start-btn').disabled = true;
+  document.getElementById('sc-start-btn').textContent = 'Starting…';
+
+  try {
+    const res = await fetch('/api/scan', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ sbUrl: SB_URL, sbKey: SB_KEY, url, scope, fileTypes, maxPages, fetchDetails })
+    });
+    const json = await res.json();
+    if(json.error){ errEl.textContent=json.error; errEl.classList.add('show'); document.getElementById('sc-start-btn').disabled=false; document.getElementById('sc-start-btn').textContent='Start scan'; return; }
+
+    scState = { scan: json.scan, files: [], stopped: false, zipping:false };
+    document.getElementById('sc-results-card').style.display = 'block';
+    document.getElementById('sc-stop-btn').style.display = 'inline-flex';
+    renderScanResults();
+    pollDocScan(json.scan.id);
+  } catch(e) {
+    errEl.textContent = 'Could not reach the scanner: '+e.message; errEl.classList.add('show');
+    document.getElementById('sc-start-btn').disabled=false; document.getElementById('sc-start-btn').textContent='Start scan';
+  }
+};
+
+window.stopDocScan = function(){ scState.stopped = true; };
+
+async function pollDocScan(scanId) {
+  while(!scState.stopped) {
+    let tickJson;
+    try {
+      const tickRes = await fetch('/api/tick', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ sbUrl: SB_URL, sbKey: SB_KEY, scanId })
+      });
+      tickJson = await tickRes.json();
+    } catch(e) {
+      document.getElementById('sc-err').textContent = 'Connection lost while scanning: '+e.message;
+      document.getElementById('sc-err').classList.add('show');
+      break;
+    }
+    if(tickJson.error){
+      document.getElementById('sc-err').textContent = tickJson.error;
+      document.getElementById('sc-err').classList.add('show');
+      break;
+    }
+    if(tickJson.scan) scState.scan = tickJson.scan;
+
+    try {
+      scState.files = await sbGet(`doc_scan_files?scan_id=eq.${scanId}&order=id.asc`);
+    } catch { /* keep previous files list on transient errors */ }
+
+    renderScanResults();
+    if(tickJson.done) break;
+    await new Promise(r=>setTimeout(r,400));
+  }
+  document.getElementById('sc-start-btn').disabled = false;
+  document.getElementById('sc-start-btn').textContent = 'Start scan';
+  document.getElementById('sc-stop-btn').style.display = 'none';
+  renderScannerHistory();
+}
+
+function renderScanResults() {
+  const s = scState.scan; if(!s) return;
+  const badge = document.getElementById('sc-status-badge');
+  const colors = { running:['var(--amber)','var(--ambert)','Scanning'], done:['var(--green)','var(--greent)','Complete'], error:['var(--red)','var(--redt)','Error'] };
+  const [c,bg,label] = colors[s.status] || colors.running;
+  badge.style.color=c; badge.style.background=bg; badge.textContent=label;
+  document.getElementById('sc-website').textContent = s.website_name;
+  document.getElementById('sc-pages').textContent = s.pages_crawled;
+  document.getElementById('sc-files').textContent = s.files_found;
+
+  const tb = document.getElementById('sc-tb');
+  if(scState.files.length===0){
+    tb.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:20px">${s.status==='running'?'Scanning… files will appear here as they\'re found.':'No matching files found.'}</td></tr>`;
+  } else {
+    tb.innerHTML = scState.files.map(f=>`
+      <tr>
+        <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.file_name}">${f.file_name}</td>
+        <td>${FILE_TYPE_LABELS[f.file_type]||f.file_type}</td>
+        <td>${f.pages ?? '—'}</td>
+        <td>${scFmtBytes(f.size_bytes)}</td>
+        <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><a href="${f.source_page_url}" target="_blank">${f.source_page_url}</a></td>
+        <td><a href="${f.file_url}" target="_blank">Open</a></td>
+      </tr>`).join('');
+  }
+}
+
+window.downloadScanZip = async function() {
+  if(scState.zipping || scState.files.length===0) return;
+  scState.zipping = true;
+  const btn = document.getElementById('sc-zip-btn');
+  const zip = new JSZip();
+  const used = new Set();
+  for(let i=0;i<scState.files.length;i++){
+    const f = scState.files[i];
+    btn.textContent = `Zipping ${i+1}/${scState.files.length}…`;
+    try {
+      const r = await fetch('/api/proxy?url='+encodeURIComponent(f.file_url));
+      if(r.ok){
+        const blob = await r.blob();
+        let name = f.file_name || ('file-'+f.id);
+        while(used.has(name)) name = f.id+'-'+name;
+        used.add(name);
+        zip.file(name, blob);
+      }
+    } catch { /* skip files that fail, keep going */ }
+  }
+  btn.textContent = 'Zipping…';
+  const content = await zip.generateAsync({type:'blob'});
+  saveAs(content, (scState.scan.website_name||'scan').replace(/[^a-z0-9.-]/gi,'_')+'-files-'+Date.now()+'.zip');
+  btn.textContent = 'Download all (.zip)';
+  scState.zipping = false;
+};
+
+window.exportScanExcel = function() {
+  if(scState.files.length===0) return;
+  const rows = scState.files.map(f=>({
+    'File Name': f.file_name,
+    'Type': FILE_TYPE_LABELS[f.file_type]||f.file_type,
+    'Pages': f.pages ?? '',
+    'Size': scFmtBytes(f.size_bytes),
+    'Source Page': f.source_page_url,
+    'File URL': f.file_url,
+    'Date Found': scFmtDate(f.found_at),
+    'Complexity': '',
+    'Price': ''
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{wch:34},{wch:10},{wch:8},{wch:10},{wch:42},{wch:42},{wch:18},{wch:14},{wch:12}];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Files');
+  const name = (scState.scan.website_name||'scan').replace(/[^a-z0-9.-]/gi,'_');
+  XLSX.writeFile(wb, `${name}-files-${Date.now()}.xlsx`);
+};
+
+async function renderScannerHistory() {
+  const tb = document.getElementById('sc-hist-tb');
+  tb.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:16px">Loading…</td></tr>`;
+  try {
+    const rows = await sbGet('doc_scans?select=id,website_name,root_url,scope,pages_crawled,files_found,status,created_at&order=created_at.desc&limit=50');
+    if(!rows || rows.length===0){
+      tb.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:16px">No scans yet.</td></tr>`;
+      return;
+    }
+    tb.innerHTML = rows.map(r=>`
+      <tr>
+        <td>${r.website_name}</td>
+        <td>${SCAN_SCOPE_LABELS[r.scope]||r.scope}</td>
+        <td>${scFmtDate(r.created_at)}</td>
+        <td>${r.pages_crawled}</td>
+        <td>${r.files_found}</td>
+        <td style="text-transform:capitalize">${r.status}</td>
+      </tr>`).join('');
+  } catch(e) {
+    tb.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--red);padding:16px">Could not load history.</td></tr>`;
+  }
 }
 
 // ── Month pickers ─────────────────────────────────────────
@@ -896,6 +1191,7 @@ window.onMC = function(){ curM=+document.getElementById('sel-m').value; curY=+do
 
 // ── DASHBOARD ─────────────────────────────────────────────
 function renderDash() {
+  renderELBanner();
   const rev  = S.log.reduce((s,e)=>s+calcRev(e),0);
   const cost = S.log.reduce((s,e)=>s+calcCost(e),0);
   const pgs  = S.log.reduce((s,e)=>s+(e.pages||0),0);
@@ -924,6 +1220,55 @@ function renderDash() {
     return `<tr><td class="td-mono">${e.date}</td><td class="td-main">${r?.name||'—'}</td><td>${c?.name||'—'}</td><td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text3)" title="${e.task||''}">${e.task||'—'}</td><td class="td-mono">${e.pages||0}</td><td class="td-mono" style="color:var(--green)">${fmt(rv)}</td><td class="td-mono" style="color:${pf>=0?'var(--green)':'var(--red)'};font-weight:700">${fmt(pf)}</td></tr>`;
   }).join('') : `<tr><td colspan="7"><div class="empty"><div class="empty-ico">📋</div><div class="empty-txt">No entries yet. Go to Work log to add your first entry.</div></div></td></tr>`;
 }
+
+function getPendingELSettlements(year){
+  return S.resources
+    .filter(r=>r.type==='Employee' && r.joining_date)
+    .map(r=>({ r, due: elSettlementDue(r,year), already: elSettlementRow(r,year) }))
+    .filter(x=>x.due>0 && !x.already);
+}
+
+function renderELBanner(){
+  const banner = document.getElementById('d-el-banner');
+  if(!banner) return;
+  const today = getISTDate(); // fresh — never stale, even in a long-lived tab
+  const priorYear = today.getFullYear()-1;
+  const showBanner = (today.getMonth()+1) >= 3; // March onward (IST)
+  const pending = getPendingELSettlements(priorYear);
+  if(!showBanner || !pending.length){ banner.innerHTML=''; return; }
+
+  banner.innerHTML = `<div class="card" style="border-color:var(--purple);margin-bottom:20px">
+    <div class="card-body" style="padding:16px 20px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+        <span style="font-size:20px">🌴</span>
+        <div style="font-weight:700;font-size:14px">Earned Leave settlement due — ${priorYear}</div>
+      </div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:12px">
+        These employees have unused Earned Leave from ${priorYear}. Add the amount to their February ${today.getFullYear()} salary, then mark it settled below — this removes it from their running EL balance.
+      </div>
+      <div class="t-wrap"><table><thead><tr><th>Employee</th><th>EL Days Due</th><th>Amount</th><th></th></tr></thead><tbody>
+      ${pending.map(({r,due})=>{
+        const perDay = dailyCostFor(r, today.getFullYear(), 2);
+        const amount = due*perDay;
+        return `<tr>
+          <td class="td-main">${r.name}</td>
+          <td class="td-mono">${due}</td>
+          <td class="td-mono">${fmt(amount)}</td>
+          <td><button class="btn btn-primary btn-sm" onclick="processELSettlement('${r.id}',${priorYear},${due},${amount})">Mark settled &amp; add to Feb</button></td>
+        </tr>`;
+      }).join('')}
+      </tbody></table></div>
+    </div>
+  </div>`;
+}
+
+window.processELSettlement = async function(rid, year, days, amount){
+  if(!confirm(`Confirm: settle ${days} EL day(s) (${fmt(amount)}) for ${year}?\n\nThis will be reflected as a bonus in February's salary and permanently removed from this employee's running EL balance.`)) return;
+  try{
+    await sbPost('el_settlements', {resource_id:rid, year, days, amount});
+    await loadAll(); render(); toast('EL settlement recorded ✓');
+  } catch(e){ alert('Error: '+e.message); }
+};
 
 // ── RESOURCES ─────────────────────────────────────────────
 function renderRes() {
@@ -1161,8 +1506,10 @@ function renderAtt() {
         const k=attK(r.id,curY,curM,d);
         const rec=S.attendance[k];
         const v=rec?.status||'';
-        const displayV = v==='A' ? (rec.leave_type||'A') : v;
-        const tip = v==='A' ? `${r.name} – Day ${d} – Absent (${rec.leave_type||'unspecified'})` : `${r.name} – Day ${d}`;
+        const displayV = v==='A' ? (rec.leave_type||'A') : (v==='HF' ? `½${rec.leave_type||''}` : v);
+        const tip = v==='A' ? `${r.name} – Day ${d} – Absent (${rec.leave_type||'unspecified'})`
+                  : v==='HF' ? `${r.name} – Day ${d} – Half-day (${rec.leave_type||'unspecified'})`
+                  : `${r.name} – Day ${d}`;
         html+=`<div class="att-cell" data-v="${v==='A'?'A':v}" onclick="openAttChooser('${r.id}',${curY},${curM},${d})" title="${tip}">${displayV}</div>`;
       }
     }
@@ -1188,7 +1535,9 @@ window.openAttChooser = function(rid,y,m,d){
   showM(`<div class="modal-title">${r?.name||''} — ${dateLbl}</div>
     <div style="font-size:12px;color:var(--text3);margin-bottom:14px">Choose the attendance status for this day.</div>
     ${btn('✓ Present', curStatus==='P', `setAtt('${rid}',${y},${m},${d},'P',null)`)}
-    ${btn('◐ Half-day', curStatus==='HF', `setAtt('${rid}',${y},${m},${d},'HF',null)`)}
+    <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px">Half-day — pick leave type (2 half-days = 1 day)</div>
+    ${btn('◐ Half-day — Casual Leave', curStatus==='HF'&&curType==='CL', `setAtt('${rid}',${y},${m},${d},'HF','CL')`)}
+    ${btn('◐ Half-day — Sick Leave', curStatus==='HF'&&curType==='SL', `setAtt('${rid}',${y},${m},${d},'HF','SL')`)}
     <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin:14px 0 6px">Absent — pick leave type</div>
     ${btn('Casual Leave (CL)', curStatus==='A'&&curType==='CL', `setAtt('${rid}',${y},${m},${d},'A','CL')`)}
     ${btn('Sick Leave (SL)', curStatus==='A'&&curType==='SL', `setAtt('${rid}',${y},${m},${d},'A','SL')`)}
@@ -1665,6 +2014,36 @@ function renderPayroll(){
   const employees = S.resources.filter(r=>r.type==='Employee');
   const days = dim(curY,curM);
 
+  // Permanent EL Settlements card — always visible, tied to (year currently selected - 1)
+  const priorYear = curY-1;
+  const pending = getPendingELSettlements(priorYear);
+  const elCard = document.getElementById('pr-el-card');
+  if(pending.length){
+    elCard.innerHTML = `<div class="card" style="border-color:var(--purple);margin-bottom:20px">
+      <div class="card-body" style="padding:16px 20px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+          <span style="font-size:20px">🌴</span>
+          <div style="font-weight:700;font-size:14px">Earned Leave settlement due — ${priorYear}</div>
+        </div>
+        <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Mark these as settled to add the bonus to February ${curY}'s payroll below.</div>
+        <div class="t-wrap"><table><thead><tr><th>Employee</th><th>EL Days Due</th><th>Amount</th><th></th></tr></thead><tbody>
+        ${pending.map(({r,due})=>{
+          const perDay = dailyCostFor(r, curY, 2);
+          const amount = due*perDay;
+          return `<tr>
+            <td class="td-main">${r.name}</td>
+            <td class="td-mono">${due}</td>
+            <td class="td-mono">${fmt(amount)}</td>
+            <td><button class="btn btn-primary btn-sm" onclick="processELSettlement('${r.id}',${priorYear},${due},${amount})">Mark settled &amp; add to Feb</button></td>
+          </tr>`;
+        }).join('')}
+        </tbody></table></div>
+      </div>
+    </div>`;
+  } else {
+    elCard.innerHTML = '';
+  }
+
   const rows = employees.map(r=>{
     let present=0, half=0;
     for(let d=1; d<=days; d++){
@@ -1676,16 +2055,20 @@ function renderPayroll(){
       else if(st==='HF') half++;
     }
     const brk = r.joining_date ? monthLeaveBreakdown(r,curY,curM) : {cl:0,sl:0,el:0,lopExplicit:0,clOverflow:0,slOverflow:0,elOverflow:0,totalLOPDays:0};
-    const gross = r.salary_type==='monthly' ? (r.monthly_salary||0) : dailyCostFor(r,curY,curM)*workingDaysInMonth(curY,curM);
+    const baseGross = r.salary_type==='monthly' ? (r.monthly_salary||0) : dailyCostFor(r,curY,curM)*workingDaysInMonth(curY,curM);
     const perDay = dailyCostFor(r,curY,curM);
-    const deduction = (brk.totalLOPDays + half*0.5) * perDay;
+    const deduction = brk.totalLOPDays * perDay;
+    // EL settlement bonus lands in February's payroll for the prior year's settlement
+    const elBonus = (curM===2) ? Number(elSettlementRow(r,curY-1)?.amount||0) : 0;
+    const gross = baseGross + elBonus;
     const net = gross - deduction;
-    return {r, present, half, brk, gross, deduction, net, perDay};
+    return {r, present, half, brk, gross, elBonus, deduction, net, perDay};
   });
 
   const totGross = rows.reduce((s,x)=>s+x.gross,0);
   const totDed = rows.reduce((s,x)=>s+x.deduction,0);
   const totNet = rows.reduce((s,x)=>s+x.net,0);
+  const totElBonus = rows.reduce((s,x)=>s+x.elBonus,0);
 
   const mc=(lbl,val,c)=>`<div class="m-card" style="--c:${c}"><div class="m-label">${lbl}</div><div class="m-val" style="color:${c}">${val}</div></div>`;
   document.getElementById('pr-metrics').innerHTML =
@@ -1695,8 +2078,8 @@ function renderPayroll(){
     mc('Employees',employees.length,'var(--accent)');
 
   document.getElementById('pr-tb').innerHTML = !rows.length
-    ? `<tr><td colspan="11"><div class="empty"><div class="empty-ico">🧾</div><div class="empty-txt">No employees yet.</div></div></td></tr>`
-    : rows.map(({r,present,half,brk,gross,deduction,net})=>`<tr>
+    ? `<tr><td colspan="12"><div class="empty"><div class="empty-ico">🧾</div><div class="empty-txt">No employees yet.</div></div></td></tr>`
+    : rows.map(({r,present,half,brk,gross,elBonus,deduction,net})=>`<tr>
         <td class="td-main">${r.name}</td>
         <td class="td-mono" style="text-align:center">${present}</td>
         <td class="td-mono" style="text-align:center">${half||'—'}</td>
@@ -1705,6 +2088,7 @@ function renderPayroll(){
         <td class="td-mono" style="text-align:center">${brk.el||'—'}</td>
         <td class="td-mono" style="text-align:center;color:${brk.totalLOPDays>0?'var(--red)':'inherit'}">${brk.totalLOPDays||'—'}</td>
         <td class="td-mono">${fmt(gross)}</td>
+        <td class="td-mono" style="color:var(--purple)">${elBonus>0?fmt(elBonus):'—'}</td>
         <td class="td-mono" style="color:var(--red)">${deduction>0?fmt(deduction):'—'}</td>
         <td class="td-mono" style="font-weight:700;color:var(--green)">${fmt(net)}</td>
         <td><button class="btn btn-ghost btn-sm" onclick="openSalarySlip('${r.id}')">View slip</button></td>
@@ -1713,6 +2097,7 @@ function renderPayroll(){
   document.getElementById('pr-tot-row').innerHTML = `
     <td class="td-main">Total</td><td colspan="6"></td>
     <td class="td-mono">${fmt(totGross)}</td>
+    <td class="td-mono" style="color:var(--purple)">${totElBonus>0?fmt(totElBonus):'—'}</td>
     <td class="td-mono" style="color:var(--red)">${fmt(totDed)}</td>
     <td class="td-mono" style="font-weight:700;color:var(--green)">${fmt(totNet)}</td><td></td>`;
 }
@@ -1733,9 +2118,11 @@ window.openSalarySlip = function(rid){
   const wd = workingDaysInMonth(y,m);
   const brk = r.joining_date ? monthLeaveBreakdown(r,y,m) : {cl:0,sl:0,el:0,lopExplicit:0,clOverflow:0,slOverflow:0,elOverflow:0,totalLOPDays:0};
   const bal = r.joining_date ? leaveBalance(r,y,m) : null;
-  const gross = r.salary_type==='monthly' ? (r.monthly_salary||0) : dailyCostFor(r,y,m)*wd;
+  const baseGross = r.salary_type==='monthly' ? (r.monthly_salary||0) : dailyCostFor(r,y,m)*wd;
   const perDay = dailyCostFor(r,y,m);
-  const deduction = (brk.totalLOPDays + half*0.5) * perDay;
+  const elBonus = (m===2) ? Number(elSettlementRow(r,y-1)?.amount||0) : 0;
+  const gross = baseGross + elBonus;
+  const deduction = brk.totalLOPDays * perDay;
   const net = gross - deduction;
 
   showM(`
@@ -1775,8 +2162,9 @@ window.openSalarySlip = function(rid){
       </div>`:''}
       <div style="border-top:1px solid var(--border);padding-top:12px">
         <div style="font-size:11px;font-weight:700;color:var(--text3);text-transform:uppercase;margin-bottom:8px">Earnings</div>
-        <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Gross salary</span><span class="td-mono">${fmt(gross)}</span></div>
-        <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px;color:var(--red)"><span>Deduction (LOP + half-day)</span><span class="td-mono">-${fmt(deduction)}</span></div>
+        <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px"><span>Base salary</span><span class="td-mono">${fmt(baseGross)}</span></div>
+        ${elBonus>0?`<div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px;color:var(--purple)"><span>🌴 EL Settlement (${y-1})</span><span class="td-mono">+${fmt(elBonus)}</span></div>`:''}
+        <div class="row" style="display:flex;justify-content:space-between;margin-bottom:6px;color:var(--red)"><span>Deduction (Loss of Pay)</span><span class="td-mono">-${fmt(deduction)}</span></div>
         <div class="row" style="display:flex;justify-content:space-between;font-weight:700;font-size:15px;padding-top:8px;border-top:1px solid var(--border)"><span>Net pay</span><span class="td-mono" style="color:var(--green)">${fmt(net)}</span></div>
       </div>
     </div>

@@ -62,3 +62,36 @@ Vercel auto-deploys on every push. No manual steps needed.
 ## Custom domain
 
 In Vercel → your project → **Settings → Domains** → add your domain. Vercel handles HTTPS automatically.
+
+---
+
+## Document Scanner (added)
+
+A new **Document Scanner** page in the sidebar lets you paste a client link, crawl it for
+PDF/Word/PowerPoint/Excel files, and export a review sheet (File Name, Type, Pages, Size,
+Source Page, File URL, Date Found, plus blank **Complexity**/**Price** columns) — handy for
+sizing up a client's files before quoting work in the existing Complexity/rate system.
+
+**One extra setup step:** run `migration_v8.sql` in the Supabase SQL editor (same place you ran
+`schema.sql`) — it adds 4 new tables (`doc_scans`, `doc_scan_queue`, `doc_scan_visited`,
+`doc_scan_files`) and doesn't touch anything existing.
+
+No new environment variables or Supabase project needed — it reuses the same Project URL/anon
+key already saved in this browser, and the crawler runs as small Vercel serverless functions
+under `/api` (added to this same project, so it deploys automatically with everything else on
+`git push`).
+
+Files are **not stored anywhere** — only their name/link/size/page-count metadata is saved.
+"Download all (.zip)" and "Export review sheet (.xlsx)" both download straight to your
+computer.
+
+Notes:
+- Word files always show a blank Pages column (page count isn't reliably stored in the file
+  format itself).
+- Legacy binary Office formats (`.doc`, `.ppt`, `.xls`) list fine but only get a slide/sheet
+  count on their modern `.docx/.pptx/.xlsx` equivalents.
+- Files over 40MB skip the detailed page/slide/sheet lookup (still listed and downloadable) to
+  keep scans fast.
+- If a client's site only renders links via client-side JavaScript (rare, mostly single-page
+  apps), the crawler won't see them — say the word if you hit one and want headless-browser
+  support added.
