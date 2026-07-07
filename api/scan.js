@@ -1,4 +1,5 @@
 const { sbFetch } = require("./_sb");
+const { discoverSitemapUrls } = require("./_sitemap");
 
 module.exports = async (req, res) => {
   if (req.method !== "POST") {
@@ -51,7 +52,31 @@ module.exports = async (req, res) => {
       body: JSON.stringify({ scan_id: scan.id, url: parsed.toString() }),
     });
 
-    res.status(200).json({ scan });
+    let sitemapUrlsQueued = 0;
+    if (scope !== "single") {
+      try {
+        const sitemapUrls = await discoverSitemapUrls(parsed.toString(), scope);
+        const cap = Math.max(0, (maxPages || 500) - 1);
+        const toQueue = sitemapUrls.filter((u) => u !== parsed.toString()).slice(0, cap);
+        if (toQueue.length > 0) {
+          await sbFetch(sbUrl, sbKey, "doc_scan_visited", {
+            method: "POST",
+            prefer: "return=minimal,resolution=ignore-duplicates",
+            body: JSON.stringify(toQueue.map((u) => ({ scan_id: scan.id, url: u }))),
+          });
+          await sbFetch(sbUrl, sbKey, "doc_scan_queue", {
+            method: "POST",
+            prefer: "return=minimal",
+            body: JSON.stringify(toQueue.map((u) => ({ scan_id: scan.id, url: u, depth: 1 }))),
+          });
+          sitemapUrlsQueued = toQueue.length;
+        }
+      } catch {
+        // sitemap discovery is a best-effort bonus - normal link-following crawl still runs regardless
+      }
+    }
+
+    res.status(200).json({ scan, sitemapUrlsQueued });
   } catch (e) {
     res.status(500).json({ error: e.message || "Could not start scan." });
   }

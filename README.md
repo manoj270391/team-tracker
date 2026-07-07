@@ -92,6 +92,14 @@ Notes:
   count on their modern `.docx/.pptx/.xlsx` equivalents.
 - Files over 40MB skip the detailed page/slide/sheet lookup (still listed and downloadable) to
   keep scans fast.
-- If a client's site only renders links via client-side JavaScript (rare, mostly single-page
-  apps), the crawler won't see them — say the word if you hit one and want headless-browser
-  support added.
+- If a client's site only renders links via client-side JavaScript (common on search/filter
+  widgets), the crawler won't see them directly from that page's raw HTML. **To help with
+  this, every "whole site"/"whole site + subdomains" scan also checks `robots.txt` and common
+  paths (`/sitemap_index.xml`, `/wp-sitemap.xml`, `/sitemap.xml`) for an XML sitemap, and
+  queues everything it lists** alongside normal link-following — this is how most WordPress
+  (and many other CMS) sites let you route around a JS-rendered search widget: the individual
+  item pages a sitemap points to are usually still server-rendered with real download links,
+  even when the search/listing widget itself isn't. If a site has no sitemap at all and hides
+  everything behind client-side JS, that's the one case this doesn't solve — say the word and
+  I'll add headless-browser rendering support (a bigger change, since Vercel serverless
+  functions need a specific setup for that, e.g. `@sparticuz/chromium`).

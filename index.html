@@ -192,6 +192,8 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
 .f-input::placeholder { color: var(--text3); }
 .sc-opt { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text2); cursor:pointer; border:1px solid var(--border); border-radius:var(--r-sm); padding:8px 12px; background:var(--bg3); }
 .sc-opt:has(input:checked) { border-color:var(--accent); color:var(--text); background:var(--accentt); }
+.sc-info { background: var(--greent); border: 1px solid rgba(54,211,153,.35); border-radius: var(--r-sm); padding: 10px 14px; font-size: 12px; color: var(--green); margin-top: 10px; display: none; }
+.sc-info.show { display: block; }
 .f-hint { font-size: 11px; color: var(--text3); line-height: 1.6; margin-top: 2px; }
 
 /* ── Attendance ──────────────────────────────────────────── */
@@ -554,6 +556,7 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
             </div>
 
             <div id="sc-err" class="setup-err" style="margin-top:10px"></div>
+            <div id="sc-info" class="sc-info"></div>
 
             <div style="display:flex;gap:10px;margin-top:16px">
               <button class="btn btn-primary" id="sc-start-btn" onclick="startDocScan()">Start scan</button>
@@ -1037,6 +1040,13 @@ window.startDocScan = async function() {
     scState = { scan: json.scan, files: [], stopped: false, zipping:false };
     document.getElementById('sc-results-card').style.display = 'block';
     document.getElementById('sc-stop-btn').style.display = 'inline-flex';
+    const infoEl = document.getElementById('sc-info');
+    if(json.sitemapUrlsQueued > 0){
+      infoEl.textContent = `Found a sitemap — queued ${json.sitemapUrlsQueued} additional pages from it alongside normal link-following.`;
+      infoEl.classList.add('show');
+    } else {
+      infoEl.classList.remove('show');
+    }
     renderScanResults();
     pollDocScan(json.scan.id);
   } catch(e) {
