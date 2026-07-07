@@ -535,7 +535,8 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
                 <div class="f-label" style="margin-bottom:8px">Scan scope</div>
                 <div style="display:flex;flex-direction:column;gap:8px">
                   <label class="sc-opt"><input type="radio" name="sc-scope" value="single"> Only this exact page</label>
-                  <label class="sc-opt"><input type="radio" name="sc-scope" value="site" checked> Entire website (same domain)</label>
+                  <label class="sc-opt"><input type="radio" name="sc-scope" value="section" checked> Only this section (same path)</label>
+                  <label class="sc-opt"><input type="radio" name="sc-scope" value="site"> Entire website (same domain)</label>
                   <label class="sc-opt"><input type="radio" name="sc-scope" value="subdomains"> Entire website + subdomains</label>
                 </div>
               </div>
@@ -580,6 +581,7 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
             <div style="display:flex;gap:10px;margin-bottom:16px">
               <button class="btn btn-ghost" id="sc-zip-btn" onclick="downloadScanZip()">Download all (.zip)</button>
               <button class="btn btn-primary" id="sc-xlsx-btn" onclick="exportScanExcel()">Export review sheet (.xlsx)</button>
+              <button class="btn btn-ghost" style="color:var(--red);margin-left:auto" onclick="deleteActiveDocScan()">🗑 Delete this scan</button>
             </div>
             <div class="t-wrap"><table><thead><tr><th>File</th><th>Type</th><th>Pages</th><th>Size</th><th>Found on</th><th></th></tr></thead><tbody id="sc-tb"></tbody></table></div>
           </div>
@@ -587,7 +589,7 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
 
         <div class="card">
           <div class="card-hd"><div class="card-title">Past scans</div></div>
-          <div class="t-wrap"><table><thead><tr><th>Website</th><th>Scope</th><th>Date</th><th>Pages crawled</th><th>Files found</th><th>Status</th></tr></thead><tbody id="sc-hist-tb"></tbody></table></div>
+          <div class="t-wrap"><table><thead><tr><th>Website</th><th>Scope</th><th>Date</th><th>Pages crawled</th><th>Files found</th><th>Status</th><th></th></tr></thead><tbody id="sc-hist-tb"></tbody></table></div>
         </div>
       </div>
 
@@ -999,7 +1001,7 @@ function render(p) {
 
 // ── DOCUMENT SCANNER ───────────────────────────────────────
 const FILE_TYPE_LABELS = { pdf:'PDF', doc:'Word', ppt:'PowerPoint', xlsx:'Excel' };
-const SCAN_SCOPE_LABELS = { single:'Single page', site:'Whole site', subdomains:'Whole site + subdomains' };
+const SCAN_SCOPE_LABELS = { single:'Single page', section:'Section (path)', site:'Whole site', subdomains:'Whole site + subdomains' };
 let scState = { scan:null, files:[], stopped:true, zipping:false };
 
 function scFmtBytes(b){
@@ -1166,13 +1168,42 @@ window.exportScanExcel = function() {
   XLSX.writeFile(wb, `${name}-files-${Date.now()}.xlsx`);
 };
 
+window.deleteActiveDocScan = async function() {
+  if(!scState.scan) return;
+  if(!confirm(`Delete this scan of ${scState.scan.website_name} and its ${scState.files.length} file record(s)? This can't be undone (the actual files on their site aren't affected, only this list).`)) return;
+  try {
+    await sbDelete(`doc_scans?id=eq.${scState.scan.id}`);
+  } catch(e) {
+    alert('Could not delete: '+e.message);
+    return;
+  }
+  scState = { scan:null, files:[], stopped:true, zipping:false };
+  document.getElementById('sc-results-card').style.display = 'none';
+  renderScannerHistory();
+};
+
+window.deleteDocScanHistoryRow = async function(id, websiteName) {
+  if(!confirm(`Delete the scan of ${websiteName}? This can't be undone (the actual files on their site aren't affected, only this list).`)) return;
+  try {
+    await sbDelete(`doc_scans?id=eq.${id}`);
+  } catch(e) {
+    alert('Could not delete: '+e.message);
+    return;
+  }
+  if(scState.scan && scState.scan.id === id){
+    scState = { scan:null, files:[], stopped:true, zipping:false };
+    document.getElementById('sc-results-card').style.display = 'none';
+  }
+  renderScannerHistory();
+};
+
 async function renderScannerHistory() {
   const tb = document.getElementById('sc-hist-tb');
-  tb.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:16px">Loading…</td></tr>`;
+  tb.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:16px">Loading…</td></tr>`;
   try {
     const rows = await sbGet('doc_scans?select=id,website_name,root_url,scope,pages_crawled,files_found,status,created_at&order=created_at.desc&limit=50');
     if(!rows || rows.length===0){
-      tb.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--text3);padding:16px">No scans yet.</td></tr>`;
+      tb.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text3);padding:16px">No scans yet.</td></tr>`;
       return;
     }
     tb.innerHTML = rows.map(r=>`
@@ -1183,9 +1214,10 @@ async function renderScannerHistory() {
         <td>${r.pages_crawled}</td>
         <td>${r.files_found}</td>
         <td style="text-transform:capitalize">${r.status}</td>
+        <td><button class="btn btn-ghost btn-sm" style="color:var(--red)" onclick="deleteDocScanHistoryRow('${r.id}','${r.website_name.replace(/'/g,"\\'")}')">🗑 Delete</button></td>
       </tr>`).join('');
   } catch(e) {
-    tb.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--red);padding:16px">Could not load history.</td></tr>`;
+    tb.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--red);padding:16px">Could not load history.</td></tr>`;
   }
 }
 

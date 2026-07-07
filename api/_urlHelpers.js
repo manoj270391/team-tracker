@@ -15,7 +15,13 @@ function isInScope(seedHost, candidateHost, scope) {
   if (scope === "single") return false;
   if (scope === "site") return candidateHost === seedHost;
   if (scope === "subdomains") return rootDomain(candidateHost) === rootDomain(seedHost);
+  if (scope === "section") return candidateHost === seedHost; // path check happens separately, see inSection()
   return false;
+}
+
+function inSection(seedPath, candidatePath) {
+  const base = seedPath.endsWith("/") ? seedPath : seedPath + "/";
+  return candidatePath === seedPath || candidatePath.startsWith(base);
 }
 
 function extensionOf(pathname) {
@@ -56,6 +62,7 @@ module.exports = {
   FILE_TYPE_EXTENSIONS,
   rootDomain,
   isInScope,
+  inSection,
   extensionOf,
   matchFileType,
   isCrawlableHtmlLink,

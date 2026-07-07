@@ -2,6 +2,7 @@ const cheerio = require("cheerio");
 const { sbFetch } = require("./_sb");
 const {
   isInScope,
+  inSection,
   extensionOf,
   matchFileType,
   isCrawlableHtmlLink,
@@ -77,6 +78,7 @@ module.exports = async (req, res) => {
     }
 
     const seedHost = new URL(scan.root_url).hostname;
+    const seedPath = new URL(scan.root_url).pathname;
     let newPagesCrawled = 0;
     let newFilesFound = 0;
 
@@ -139,7 +141,12 @@ module.exports = async (req, res) => {
             continue;
           }
 
-          if (scan.scope !== "single" && isCrawlableHtmlLink(linkUrl) && isInScope(seedHost, linkUrl.hostname, scan.scope)) {
+          if (
+            scan.scope !== "single" &&
+            isCrawlableHtmlLink(linkUrl) &&
+            isInScope(seedHost, linkUrl.hostname, scan.scope) &&
+            (scan.scope !== "section" || inSection(seedPath, linkUrl.pathname))
+          ) {
             try {
               await sbFetch(sbUrl, sbKey, "doc_scan_visited", {
                 method: "POST",

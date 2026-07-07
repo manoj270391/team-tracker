@@ -55,6 +55,11 @@ alter table doc_scan_queue   enable row level security;
 alter table doc_scan_visited enable row level security;
 alter table doc_scan_files   enable row level security;
 
+drop policy if exists "public access" on doc_scans;
+drop policy if exists "public access" on doc_scan_queue;
+drop policy if exists "public access" on doc_scan_visited;
+drop policy if exists "public access" on doc_scan_files;
+
 create policy "public access" on doc_scans        for all using (true) with check (true);
 create policy "public access" on doc_scan_queue   for all using (true) with check (true);
 create policy "public access" on doc_scan_visited for all using (true) with check (true);

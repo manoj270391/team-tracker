@@ -1,5 +1,5 @@
 const cheerio = require("cheerio");
-const { isInScope } = require("./_urlHelpers");
+const { isInScope, inSection } = require("./_urlHelpers");
 
 const MAX_SITEMAP_FETCHES = 25; // cap how many sitemap files (incl. nested ones) we'll follow
 const MAX_URLS = 20000; // hard safety cap on total URLs pulled from sitemaps
@@ -50,6 +50,7 @@ async function discoverSitemapUrls(rootUrl, scope) {
 
   const origin = new URL(rootUrl).origin;
   const seedHost = new URL(rootUrl).hostname;
+  const seedPath = new URL(rootUrl).pathname;
 
   const candidates = await findSitemapCandidates(origin);
   const found = new Set();
@@ -67,7 +68,9 @@ async function discoverSitemapUrls(rootUrl, scope) {
       if (found.size >= MAX_URLS) break;
       try {
         const parsed = new URL(u);
-        if (isInScope(seedHost, parsed.hostname, scope) || parsed.hostname === seedHost) {
+        const hostOk = isInScope(seedHost, parsed.hostname, scope) || parsed.hostname === seedHost;
+        const pathOk = scope !== "section" || inSection(seedPath, parsed.pathname);
+        if (hostOk && pathOk) {
           found.add(parsed.toString());
         }
       } catch {
