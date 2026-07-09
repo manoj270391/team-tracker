@@ -828,12 +828,16 @@ function payDateOverrideFor(r,y,m){
 // average half-yearly income, spread evenly across all 12 months per company preference
 // (statutory cycle is actually half-yearly, deducted only in Aug/Jan - see Leave Policy
 // page notes).
+// Professional Tax (Tamil Nadu): the slab brackets are matched against monthly salary
+// directly (e.g. ₹35,000/month falls in the "₹30,001–45,000" bracket), and the resulting
+// half-yearly amount is what's actually charged per half-year statutorily - here spread
+// evenly across all 12 months per company preference (see Leave Policy page notes).
 function monthlyProfessionalTax(r){
-  const halfYearly = annualGrossFor(r)/2;
-  if(!halfYearly || !S.ptSlabs.length) return 0;
-  const slab = S.ptSlabs.find(s => halfYearly >= s.min_half_yearly && (s.max_half_yearly==null || halfYearly <= s.max_half_yearly));
+  const monthlySalary = r.salary_type==='monthly' ? Number(r.monthly_salary||0) : 0;
+  if(!monthlySalary || !S.ptSlabs.length) return 0;
+  const slab = S.ptSlabs.find(s => monthlySalary >= Number(s.min_half_yearly) && (s.max_half_yearly==null || monthlySalary <= Number(s.max_half_yearly)));
   if(!slab) return 0;
-  return Number(slab.half_yearly_amount)/6;
+  return Math.round(Number(slab.half_yearly_amount)/6);
 }
 
 // ── LEAVE POLICY ENGINE ───────────────────────────────────
