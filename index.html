@@ -1441,34 +1441,36 @@ function renderDash() {
   renderLeaveAlerts();
 
   const rev  = S.log.reduce((s,e)=>s+calcRev(e),0);
-  const cost = S.log.reduce((s,e)=>s+calcCost(e),0);
   const pgs  = S.log.reduce((s,e)=>s+(e.pages||0),0);
+
+  // Total cost: Freelancer cost genuinely scales per logged entry (pages × rate), so
+  // summing calcCost() per worklog row is correct for them. But an Employee's cost is a
+  // fixed monthly/daily salary - summing calcCost() per worklog row was wrong for them,
+  // since it charged their full daily rate again for EVERY entry logged that day (someone
+  // logging 3 files in one day was counted as costing 3x their daily rate for that day).
+  // Employee cost is now computed properly per month actually worked (same attendance-
+  // based formula Payroll/Monthly Summary use), summed across every month they have
+  // attendance data for.
+  const freelancerCost = S.log
+    .filter(e => S.resources.find(r=>r.id===e.resource_id)?.type==='Freelancer')
+    .reduce((s,e)=>s+calcCost(e),0);
+  const employeeCost = S.resources.filter(r=>r.type==='Employee').reduce((sum,r)=>{
+    const months = new Set();
+    Object.values(S.attendance).forEach(a=>{ if(a.resource_id===r.id) months.add(a.year+'-'+a.month); });
+    const monthCost = Array.from(months).reduce((s,key)=>{
+      const [y,m] = key.split('-').map(Number);
+      return s + employeeMonthCost(r,y,m);
+    },0);
+    return sum + monthCost;
+  },0);
+  const cost = freelancerCost + employeeCost;
   const pft  = rev-cost;
-
-  // This month vs last month, for trend arrows on the revenue/cost/profit cards
-  const today = getISTDate();
-  const thisY=today.getFullYear(), thisM=today.getMonth()+1;
-  const [lastY,lastM] = thisM===1 ? [thisY-1,12] : [thisY,thisM-1];
-  const inMonth = (e,y,m) => { const [ey,em]=e.date.split('-').map(Number); return ey===y&&em===m; };
-  const thisRev = S.log.filter(e=>inMonth(e,thisY,thisM)).reduce((s,e)=>s+calcRev(e),0);
-  const lastRevM = S.log.filter(e=>inMonth(e,lastY,lastM)).reduce((s,e)=>s+calcRev(e),0);
-  const thisCost = S.log.filter(e=>inMonth(e,thisY,thisM)).reduce((s,e)=>s+calcCost(e),0);
-  const lastCostM = S.log.filter(e=>inMonth(e,lastY,lastM)).reduce((s,e)=>s+calcCost(e),0);
-  const thisProfit = thisRev-thisCost, lastProfitM = lastRevM-lastCostM;
-
-  const trend = (curr,prev) => {
-    if(prev===0 && curr===0) return '';
-    if(prev===0) return `<span style="color:var(--green)">▲ New this month</span>`;
-    const pct = Math.round(((curr-prev)/Math.abs(prev))*100);
-    const up = pct>=0;
-    return `<span style="color:${up?'var(--green)':'var(--red)'}">${up?'▲':'▼'} ${Math.abs(pct)}%</span> vs last month`;
-  };
 
   const mc = (lbl,val,c,sub='') => `<div class="m-card" style="--c:${c}"><div class="m-label">${lbl}</div><div class="m-val" style="color:${c}">${val}</div>${sub?`<div class="m-sub">${sub}</div>`:''}</div>`;
   document.getElementById('d-metrics').innerHTML =
-    mc('Total revenue',fmt(rev),'var(--green)',trend(thisRev,lastRevM))+
-    mc('Total cost',fmt(cost),'var(--red)',trend(thisCost,lastCostM))+
-    mc('Net profit',fmt(pft),pft>=0?'var(--green)':'var(--red)',trend(thisProfit,lastProfitM))+
+    mc('Total revenue',fmt(rev),'var(--green)')+
+    mc('Total cost',fmt(cost),'var(--red)')+
+    mc('Net profit',fmt(pft),pft>=0?'var(--green)':'var(--red)')+
     mc('Total pages',fmtN(pgs),'var(--blue)')+
     mc('Resources',S.resources.length,'var(--accent)')+
     mc('Log entries',S.log.length,'var(--purple)');
@@ -1501,24 +1503,31 @@ function renderAttendanceSnapshot(){
   if(!employees.length){ el.innerHTML=''; return; }
 
   let present=0, half=0, onLeave=0, absent=0, notMarked=0;
+  const halfNames=[], leaveNames=[], absentNames=[];
   employees.forEach(r=>{
     const a = S.attendance[attK(r.id,y,m,d)];
     if(!a) notMarked++;
     else if(a.status==='P') present++;
-    else if(a.status==='HF') half++;
-    else if(a.status==='A' && a.leave_type==='LOP') absent++;
-    else if(a.status==='A') onLeave++; // CL/SL/EL
+    else if(a.status==='HF'){ half++; halfNames.push(`${r.name} (${a.leave_type||'—'})`); }
+    else if(a.status==='A' && a.leave_type==='LOP'){ absent++; absentNames.push(r.name); }
+    else if(a.status==='A'){ onLeave++; leaveNames.push(`${r.name} (${a.leave_type})`); } // CL/SL/EL
   });
 
   const chip = (label,val,color) => `<div style="text-align:center;flex:1;min-width:70px"><div style="font-size:22px;font-weight:700;color:${color}">${val}</div><div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">${label}</div></div>`;
+  const nameLine = (label,names,color) => names.length ? `<div style="font-size:12px;margin-top:4px"><span style="color:${color};font-weight:600">${label}:</span> <span style="color:var(--text2)">${names.join(', ')}</span></div>` : '';
   el.innerHTML = `<div class="card" style="margin-bottom:20px">
     <div class="card-hd"><div class="card-title">Today's Attendance — ${MONTHS[m-1]} ${d}, ${y}</div></div>
-    <div class="card-body" style="display:flex;gap:8px;flex-wrap:wrap;padding:18px 20px">
+    <div class="card-body" style="padding:18px 20px">
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
       ${chip('Present',present,'var(--green)')}
       ${chip('Half-day',half,'var(--blue)')}
       ${chip('On leave',onLeave,'var(--purple)')}
       ${chip('Absent / LOP',absent,'var(--red)')}
       ${chip('Not marked',notMarked,'var(--amber)')}
+    </div>
+    ${nameLine('On leave',leaveNames,'var(--purple)')}
+    ${nameLine('Half-day',halfNames,'var(--blue)')}
+    ${nameLine('Absent / LOP',absentNames,'var(--red)')}
     </div>
   </div>`;
 }
