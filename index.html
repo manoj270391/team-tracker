@@ -811,6 +811,11 @@ function isCurrentMonth(y,m){
   return y===t.getFullYear() && m===(t.getMonth()+1);
 }
 
+function isFutureMonth(y,m){
+  const t = new Date();
+  return (y*12+m) > (t.getFullYear()*12+(t.getMonth()+1));
+}
+
 // Working days from day 1 through `throughDay` (inclusive)
 function workingDaysThrough(y,m,throughDay){
   let wd=0;
@@ -827,6 +832,7 @@ function workingDaysThrough(y,m,throughDay){
 // were already finished (which looks inflated/misleading mid-month). Once the month is
 // over, this is identical to employeeMonthCost - the real, final figure Payroll uses.
 function employeeMonthCostToDate(r,y,m){
+  if(isFutureMonth(y,m)) return 0;
   if(!isCurrentMonth(y,m)) return employeeMonthCost(r,y,m);
   const today = new Date().getDate();
   const wdFull = workingDaysInMonth(y,m);
@@ -2121,6 +2127,8 @@ function renderMonthly() {
   const days=dim(curY,curM);
   document.getElementById('m-inprogress-note').innerHTML = isCurrentMonth(curY,curM)
     ? `<div class="sc-info show" style="margin-bottom:14px">📅 This month is still in progress — Employee costs below are prorated to today (${new Date().getDate()} ${MONTHS[curM-1]}), not the full month. Figures will keep updating day by day until the month ends.</div>`
+    : isFutureMonth(curY,curM)
+    ? `<div class="sc-info show" style="margin-bottom:14px">📅 ${MONTHS[curM-1]} ${curY} hasn't started yet — costs show as ₹0 for now and will begin calculating once the month arrives.</div>`
     : '';
   const rows=S.resources.map(r=>{
     let pres=0;
