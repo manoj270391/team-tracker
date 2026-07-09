@@ -3,11 +3,10 @@
 -- Run this in Supabase → SQL Editor → New query
 -- ─────────────────────────────────────────────
 
--- Tamil Nadu professional tax slabs (Greater Chennai Corporation figures as published).
--- IMPORTANT: verify these against the current official notification before relying on
--- them for real deductions — sources disagree slightly on the latest revised amounts,
--- and tn.gov.in itself couldn't be machine-verified. Edit values here any time from the
--- Leave Policy page in the app; the payroll calculation always reads from this table.
+-- Tamil Nadu professional tax slabs — figures confirmed and provided directly. Edit values
+-- here any time from the Leave Policy page in the app; the payroll calculation always
+-- reads from this table (not hardcoded), so future rate revisions just mean updating rows
+-- here, no code changes needed.
 create table if not exists pt_slabs (
   id                  bigint generated always as identity primary key,
   min_half_yearly     numeric not null,        -- inclusive lower bound of average half-yearly income
@@ -18,11 +17,11 @@ create table if not exists pt_slabs (
 
 insert into pt_slabs (min_half_yearly, max_half_yearly, half_yearly_amount, sort_order) values
   (0,      21000,  0,    1),
-  (21001,  30000,  100,  2),
-  (30001,  45000,  235,  3),
-  (45001,  60000,  510,  4),
-  (60001,  75000,  760,  5),
-  (75001,  null,   1095, 6)
+  (21001,  30000,  180,  2),
+  (30001,  45000,  425,  3),
+  (45001,  60000,  930,  4),
+  (60001,  75000,  1025, 5),
+  (75001,  null,   1250, 6)
 on conflict do nothing;
 
 -- Manual, per-employee, per-month Income Tax (TDS) entry. Only meant to be used for
