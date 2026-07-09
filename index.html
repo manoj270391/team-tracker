@@ -792,6 +792,19 @@ function dailyCostFor(r,y,m){
   return r.cost||0; // flat daily cost fallback
 }
 
+// An Employee's real cost to the business for a month: full pay (monthly salary, or daily
+// rate × working days) minus ONLY actual Loss-of-Pay days. CL/SL/EL are paid leave, so days
+// spent on them are NOT deducted - the employee is paid in full for them, same as a present
+// day. This is the same formula the Payroll page uses; kept here as a shared helper so
+// Monthly Summary's cost figures always agree with what Payroll actually pays out.
+function employeeMonthCost(r,y,m){
+  const wd = workingDaysInMonth(y,m);
+  const baseGross = r.salary_type==='monthly' ? (r.monthly_salary||0) : dailyCostFor(r,y,m)*wd;
+  const perDay = dailyCostFor(r,y,m);
+  const brk = r.joining_date ? monthLeaveBreakdown(r,y,m) : {totalLOPDays:0};
+  return baseGross - (brk.totalLOPDays * perDay);
+}
+
 // ── SALARY BREAKUP + TAX ──────────────────────────────────
 // Basic 50% / HRA 30% / Other Allowances 20% of that month's gross earnings.
 function salaryBreakup(gross){
@@ -2083,7 +2096,7 @@ function renderMonthly() {
     const ents=S.log.filter(e=>{ const[ey,em]=e.date.split('-').map(Number); return e.resource_id===r.id&&ey===curY&&em===curM; });
     const pgs=ents.reduce((s,e)=>s+(e.pages||0),0);
     const rv=ents.reduce((s,e)=>s+calcRev(e),0);
-    const cs=r.type==='Employee'?pres*dailyCostFor(r,curY,curM):ents.reduce((s,e)=>s+calcCost(e),0);
+    const cs=r.type==='Employee'?employeeMonthCost(r,curY,curM):ents.reduce((s,e)=>s+calcCost(e),0);
     const pf=rv-cs, mg=rv>0?pf/rv:0;
     return {r,pres,pgs,rv,cs,pf,mg};
   });
