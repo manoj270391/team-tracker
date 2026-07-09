@@ -637,6 +637,7 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
 
       <!-- MONTHLY -->
       <div id="p-monthly" class="page">
+        <div id="m-inprogress-note"></div>
         <div class="metrics" id="m-metrics"></div>
         <div class="card">
           <div class="card-hd"><div class="card-title">Per-resource breakdown</div></div>
@@ -803,6 +804,38 @@ function employeeMonthCost(r,y,m){
   const perDay = dailyCostFor(r,y,m);
   const brk = r.joining_date ? monthLeaveBreakdown(r,y,m) : {totalLOPDays:0};
   return baseGross - (brk.totalLOPDays * perDay);
+}
+
+function isCurrentMonth(y,m){
+  const t = new Date();
+  return y===t.getFullYear() && m===(t.getMonth()+1);
+}
+
+// Working days from day 1 through `throughDay` (inclusive)
+function workingDaysThrough(y,m,throughDay){
+  let wd=0;
+  for(let d=1; d<=throughDay; d++){
+    const isSunday = new Date(y,m-1,d).getDay()===0;
+    const isHoliday = !!S.holidays[holidayKey(y,m,d)];
+    if(!isSunday && !isHoliday) wd++;
+  }
+  return wd;
+}
+
+// For Monthly Summary: while the month is still in progress, prorate cost to only the
+// working days elapsed so far, rather than showing a full month's pay as if the month
+// were already finished (which looks inflated/misleading mid-month). Once the month is
+// over, this is identical to employeeMonthCost - the real, final figure Payroll uses.
+function employeeMonthCostToDate(r,y,m){
+  if(!isCurrentMonth(y,m)) return employeeMonthCost(r,y,m);
+  const today = new Date().getDate();
+  const wdFull = workingDaysInMonth(y,m);
+  const wdToDate = workingDaysThrough(y,m,today);
+  const perDay = dailyCostFor(r,y,m);
+  const baseGrossFull = r.salary_type==='monthly' ? (r.monthly_salary||0) : perDay*wdFull;
+  const baseGrossToDate = baseGrossFull * (wdToDate/wdFull);
+  const brk = r.joining_date ? monthLeaveBreakdown(r,y,m) : {totalLOPDays:0};
+  return baseGrossToDate - (brk.totalLOPDays * perDay);
 }
 
 // ── SALARY BREAKUP + TAX ──────────────────────────────────
@@ -2086,6 +2119,9 @@ function renderDaily() {
 // ── MONTHLY ───────────────────────────────────────────────
 function renderMonthly() {
   const days=dim(curY,curM);
+  document.getElementById('m-inprogress-note').innerHTML = isCurrentMonth(curY,curM)
+    ? `<div class="sc-info show" style="margin-bottom:14px">📅 This month is still in progress — Employee costs below are prorated to today (${new Date().getDate()} ${MONTHS[curM-1]}), not the full month. Figures will keep updating day by day until the month ends.</div>`
+    : '';
   const rows=S.resources.map(r=>{
     let pres=0;
     for(let d=1;d<=days;d++){
@@ -2096,7 +2132,7 @@ function renderMonthly() {
     const ents=S.log.filter(e=>{ const[ey,em]=e.date.split('-').map(Number); return e.resource_id===r.id&&ey===curY&&em===curM; });
     const pgs=ents.reduce((s,e)=>s+(e.pages||0),0);
     const rv=ents.reduce((s,e)=>s+calcRev(e),0);
-    const cs=r.type==='Employee'?employeeMonthCost(r,curY,curM):ents.reduce((s,e)=>s+calcCost(e),0);
+    const cs=r.type==='Employee'?employeeMonthCostToDate(r,curY,curM):ents.reduce((s,e)=>s+calcCost(e),0);
     const pf=rv-cs, mg=rv>0?pf/rv:0;
     return {r,pres,pgs,rv,cs,pf,mg};
   });
