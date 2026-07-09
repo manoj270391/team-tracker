@@ -1435,13 +1435,23 @@ function initPickers() {
 window.onMC = function(){ curM=+document.getElementById('sel-m').value; curY=+document.getElementById('sel-y').value; render(); };
 
 // ── DASHBOARD ─────────────────────────────────────────────
+// Real data begins June 2026 - anything dated earlier is stray/test data (from before this
+// app was actually put into use) and should count as zero everywhere on the dashboard.
+const APP_DATA_START_YM = 2026*12 + 6; // absolute month index for June 2026
+function isValidDataMonth(y,m){ return (y*12+m) >= APP_DATA_START_YM; }
+
 function renderDash() {
   renderELBanner();
   renderAttendanceSnapshot();
   renderLeaveAlerts();
 
-  const rev  = S.log.reduce((s,e)=>s+calcRev(e),0);
-  const pgs  = S.log.reduce((s,e)=>s+(e.pages||0),0);
+  const validLog = S.log.filter(e=>{
+    const [ey,em] = e.date.split('-').map(Number);
+    return isValidDataMonth(ey,em);
+  });
+
+  const rev  = validLog.reduce((s,e)=>s+calcRev(e),0);
+  const pgs  = validLog.reduce((s,e)=>s+(e.pages||0),0);
 
   // Total cost: Freelancer cost genuinely scales per logged entry (pages × rate), so
   // summing calcCost() per worklog row is correct for them. But an Employee's cost is a
@@ -1450,13 +1460,13 @@ function renderDash() {
   // logging 3 files in one day was counted as costing 3x their daily rate for that day).
   // Employee cost is now computed properly per month actually worked (same attendance-
   // based formula Payroll/Monthly Summary use), summed across every month they have
-  // attendance data for.
-  const freelancerCost = S.log
+  // attendance data for - excluding anything before June 2026 (see APP_DATA_START_YM).
+  const freelancerCost = validLog
     .filter(e => S.resources.find(r=>r.id===e.resource_id)?.type==='Freelancer')
     .reduce((s,e)=>s+calcCost(e),0);
   const employeeCost = S.resources.filter(r=>r.type==='Employee').reduce((sum,r)=>{
     const months = new Set();
-    Object.values(S.attendance).forEach(a=>{ if(a.resource_id===r.id) months.add(a.year+'-'+a.month); });
+    Object.values(S.attendance).forEach(a=>{ if(a.resource_id===r.id && isValidDataMonth(a.year,a.month)) months.add(a.year+'-'+a.month); });
     const monthCost = Array.from(months).reduce((s,key)=>{
       const [y,m] = key.split('-').map(Number);
       return s + employeeMonthCost(r,y,m);
@@ -1473,10 +1483,10 @@ function renderDash() {
     mc('Net profit',fmt(pft),pft>=0?'var(--green)':'var(--red)')+
     mc('Total pages',fmtN(pgs),'var(--blue)')+
     mc('Resources',S.resources.length,'var(--accent)')+
-    mc('Log entries',S.log.length,'var(--purple)');
+    mc('Log entries',validLog.length,'var(--purple)');
 
-  const rRevs = S.resources.map(r=>({ n:r.name.split(' ')[0], v:S.log.filter(e=>e.resource_id===r.id).reduce((s,e)=>s+calcRev(e),0) }));
-  const cRevs = S.clients.map(c=>({ n:c.name, v:S.log.filter(e=>e.client_id===c.id).reduce((s,e)=>s+calcRev(e),0) }));
+  const rRevs = S.resources.map(r=>({ n:r.name.split(' ')[0], v:validLog.filter(e=>e.resource_id===r.id).reduce((s,e)=>s+calcRev(e),0) }));
+  const cRevs = S.clients.map(c=>({ n:c.name, v:validLog.filter(e=>e.client_id===c.id).reduce((s,e)=>s+calcRev(e),0) }));
   const chartOpts = (cb) => ({ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#1a2236'},ticks:{color:'#4a5568',font:{size:11}}},y:{grid:{color:'#1a2236'},ticks:{color:'#4a5568',font:{size:11},callback:v=>'₹'+v.toLocaleString('en-IN')}}} });
   if(cRes){cRes.destroy();cRes=null;} if(cCli){cCli.destroy();cCli=null;}
   if(rRevs.length) cRes=new Chart(document.getElementById('c-res'),{type:'bar',data:{labels:rRevs.map(x=>x.n),datasets:[{data:rRevs.map(x=>Math.round(x.v)),backgroundColor:'#3b6fd4',borderRadius:6,borderSkipped:false}]},options:chartOpts()});
