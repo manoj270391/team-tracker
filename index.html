@@ -469,6 +469,9 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
 
       <!-- DASHBOARD -->
       <div id="p-dashboard" class="page active">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:14px">
+          <select class="f-input" id="d-year-select" onchange="renderDash()" style="width:auto;padding:6px 12px;font-size:13px"></select>
+        </div>
         <div id="d-el-banner"></div>
         <div id="d-attendance-snapshot"></div>
         <div id="d-leave-alerts"></div>
@@ -1445,9 +1448,21 @@ function renderDash() {
   renderAttendanceSnapshot();
   renderLeaveAlerts();
 
+  // Populate the year dropdown from whatever years actually have data, plus the real
+  // current year (so it's always selectable even before any data exists for it).
+  const yearSel = document.getElementById('d-year-select');
+  const prevYearSelected = yearSel.value ? +yearSel.value : null;
+  const dataYears = new Set([getISTDate().getFullYear()]);
+  S.log.forEach(e=>{ const [ey]=e.date.split('-').map(Number); if(ey>=2026) dataYears.add(ey); });
+  Object.values(S.attendance).forEach(a=>{ if(a.year>=2026) dataYears.add(a.year); });
+  const years = Array.from(dataYears).sort((a,b)=>b-a);
+  yearSel.innerHTML = years.map(y=>`<option value="${y}">${y}</option>`).join('');
+  const selectedYear = (prevYearSelected && years.includes(prevYearSelected)) ? prevYearSelected : getISTDate().getFullYear();
+  yearSel.value = selectedYear;
+
   const validLog = S.log.filter(e=>{
     const [ey,em] = e.date.split('-').map(Number);
-    return isValidDataMonth(ey,em);
+    return isValidDataMonth(ey,em) && ey===selectedYear;
   });
 
   const rev  = validLog.reduce((s,e)=>s+calcRev(e),0);
@@ -1460,13 +1475,14 @@ function renderDash() {
   // logging 3 files in one day was counted as costing 3x their daily rate for that day).
   // Employee cost is now computed properly per month actually worked (same attendance-
   // based formula Payroll/Monthly Summary use), summed across every month they have
-  // attendance data for - excluding anything before June 2026 (see APP_DATA_START_YM).
+  // attendance data for - excluding anything before June 2026 (see APP_DATA_START_YM)
+  // and anything outside the selected year.
   const freelancerCost = validLog
     .filter(e => S.resources.find(r=>r.id===e.resource_id)?.type==='Freelancer')
     .reduce((s,e)=>s+calcCost(e),0);
   const employeeCost = S.resources.filter(r=>r.type==='Employee').reduce((sum,r)=>{
     const months = new Set();
-    Object.values(S.attendance).forEach(a=>{ if(a.resource_id===r.id && isValidDataMonth(a.year,a.month)) months.add(a.year+'-'+a.month); });
+    Object.values(S.attendance).forEach(a=>{ if(a.resource_id===r.id && isValidDataMonth(a.year,a.month) && a.year===selectedYear) months.add(a.year+'-'+a.month); });
     const monthCost = Array.from(months).reduce((s,key)=>{
       const [y,m] = key.split('-').map(Number);
       return s + employeeMonthCostToDate(r,y,m);
