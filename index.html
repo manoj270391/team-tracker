@@ -522,7 +522,7 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
             <div style="display:flex;gap:18px;font-size:12px;color:var(--text3);flex-wrap:wrap;align-items:center">
               <strong style="color:var(--text2)">Key:</strong>
               <span><span class="badge b-L" style="background:rgba(139,150,176,.18)">Sun</span> Sunday — auto-holiday, no need to mark</span>
-              <span><span class="badge" style="background:var(--purplet);color:var(--purple)">Hol</span> Public / govt holiday — click to add</span>
+              <span><span class="badge" style="background:var(--purplet);color:var(--purple)">Hol</span> Public / govt holiday — click to add, edit, rename, or remove</span>
               <span style="color:var(--text3)">· Click any weekday to toggle a holiday for the whole team</span>
             </div>
           </div>
@@ -1966,7 +1966,7 @@ function renderHolidays() {
     else if(h){ bg='var(--purplet)'; bd='rgba(167,139,250,.4)'; col='var(--purple)'; label='Hol'; }
     html+=`<div onclick="${isSun?'':`toggleHoliday(${curY},${curM},${d})`}"
       style="border:1px solid ${bd};background:${bg};border-radius:7px;padding:6px 4px;text-align:center;cursor:${isSun?'default':'pointer'};transition:transform .1s"
-      title="${h?.name||(isSun?'Sunday (auto)':'Click to mark as holiday')}"
+      title="${isSun?'Sunday (auto)':(h?(h.name||'Holiday')+' — click to edit or remove':'Click to mark as holiday')}"
       onmouseover="if(!${isSun})this.style.transform='scale(1.05)'" onmouseout="this.style.transform='none'">
       <div style="font-size:9px;color:var(--text3);font-weight:700">${dayLbl}</div>
       <div style="font-size:13px;font-weight:700;color:${col}">${d}</div>
@@ -1982,7 +1982,13 @@ window.toggleHoliday = async function(y,m,d) {
   const existing=S.holidays[k];
   try {
     if(existing){
-      await sbDelete(`holidays?year=eq.${y}&month=eq.${m}&day=eq.${d}`);
+      const name = prompt('Edit holiday name (clear the field and OK to remove this holiday):', existing.name||'');
+      if(name===null) return; // cancelled - leave as-is
+      if(name.trim()===''){
+        await sbDelete(`holidays?year=eq.${y}&month=eq.${m}&day=eq.${d}`);
+      } else {
+        await sbPatch(`holidays?year=eq.${y}&month=eq.${m}&day=eq.${d}`, {name});
+      }
     } else {
       const name = prompt('Holiday name (optional):','') || null;
       await sbPost('holidays',{year:y,month:m,day:d,name});
