@@ -1469,7 +1469,7 @@ function renderDash() {
     Object.values(S.attendance).forEach(a=>{ if(a.resource_id===r.id && isValidDataMonth(a.year,a.month)) months.add(a.year+'-'+a.month); });
     const monthCost = Array.from(months).reduce((s,key)=>{
       const [y,m] = key.split('-').map(Number);
-      return s + employeeMonthCost(r,y,m);
+      return s + employeeMonthCostToDate(r,y,m);
     },0);
     return sum + monthCost;
   },0);
