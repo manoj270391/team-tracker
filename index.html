@@ -470,14 +470,12 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
       <!-- DASHBOARD -->
       <div id="p-dashboard" class="page active">
         <div id="d-el-banner"></div>
+        <div id="d-attendance-snapshot"></div>
+        <div id="d-leave-alerts"></div>
         <div class="metrics" id="d-metrics"></div>
         <div class="grid-2">
           <div class="card"><div class="card-hd"><div class="card-title">Revenue by resource</div></div><div class="card-body"><div style="position:relative;height:190px"><canvas id="c-res"></canvas></div></div></div>
           <div class="card"><div class="card-hd"><div class="card-title">Revenue by client</div></div><div class="card-body"><div style="position:relative;height:190px"><canvas id="c-cli"></canvas></div></div></div>
-        </div>
-        <div class="card">
-          <div class="card-hd"><div class="card-title">Recent entries</div></div>
-          <div class="t-wrap"><table><thead><tr><th>Date</th><th>Resource</th><th>Client</th><th>Task</th><th>Pages</th><th>Revenue</th><th>Profit</th></tr></thead><tbody id="d-recent"></tbody></table></div>
         </div>
       </div>
 
@@ -1439,15 +1437,38 @@ window.onMC = function(){ curM=+document.getElementById('sel-m').value; curY=+do
 // ── DASHBOARD ─────────────────────────────────────────────
 function renderDash() {
   renderELBanner();
+  renderAttendanceSnapshot();
+  renderLeaveAlerts();
+
   const rev  = S.log.reduce((s,e)=>s+calcRev(e),0);
   const cost = S.log.reduce((s,e)=>s+calcCost(e),0);
   const pgs  = S.log.reduce((s,e)=>s+(e.pages||0),0);
   const pft  = rev-cost;
+
+  // This month vs last month, for trend arrows on the revenue/cost/profit cards
+  const today = getISTDate();
+  const thisY=today.getFullYear(), thisM=today.getMonth()+1;
+  const [lastY,lastM] = thisM===1 ? [thisY-1,12] : [thisY,thisM-1];
+  const inMonth = (e,y,m) => { const [ey,em]=e.date.split('-').map(Number); return ey===y&&em===m; };
+  const thisRev = S.log.filter(e=>inMonth(e,thisY,thisM)).reduce((s,e)=>s+calcRev(e),0);
+  const lastRevM = S.log.filter(e=>inMonth(e,lastY,lastM)).reduce((s,e)=>s+calcRev(e),0);
+  const thisCost = S.log.filter(e=>inMonth(e,thisY,thisM)).reduce((s,e)=>s+calcCost(e),0);
+  const lastCostM = S.log.filter(e=>inMonth(e,lastY,lastM)).reduce((s,e)=>s+calcCost(e),0);
+  const thisProfit = thisRev-thisCost, lastProfitM = lastRevM-lastCostM;
+
+  const trend = (curr,prev) => {
+    if(prev===0 && curr===0) return '';
+    if(prev===0) return `<span style="color:var(--green)">▲ New this month</span>`;
+    const pct = Math.round(((curr-prev)/Math.abs(prev))*100);
+    const up = pct>=0;
+    return `<span style="color:${up?'var(--green)':'var(--red)'}">${up?'▲':'▼'} ${Math.abs(pct)}%</span> vs last month`;
+  };
+
   const mc = (lbl,val,c,sub='') => `<div class="m-card" style="--c:${c}"><div class="m-label">${lbl}</div><div class="m-val" style="color:${c}">${val}</div>${sub?`<div class="m-sub">${sub}</div>`:''}</div>`;
   document.getElementById('d-metrics').innerHTML =
-    mc('Total revenue',fmt(rev),'var(--green)')+
-    mc('Total cost',fmt(cost),'var(--red)')+
-    mc('Net profit',fmt(pft),pft>=0?'var(--green)':'var(--red)')+
+    mc('Total revenue',fmt(rev),'var(--green)',trend(thisRev,lastRevM))+
+    mc('Total cost',fmt(cost),'var(--red)',trend(thisCost,lastCostM))+
+    mc('Net profit',fmt(pft),pft>=0?'var(--green)':'var(--red)',trend(thisProfit,lastProfitM))+
     mc('Total pages',fmtN(pgs),'var(--blue)')+
     mc('Resources',S.resources.length,'var(--accent)')+
     mc('Log entries',S.log.length,'var(--purple)');
@@ -1458,14 +1479,79 @@ function renderDash() {
   if(cRes){cRes.destroy();cRes=null;} if(cCli){cCli.destroy();cCli=null;}
   if(rRevs.length) cRes=new Chart(document.getElementById('c-res'),{type:'bar',data:{labels:rRevs.map(x=>x.n),datasets:[{data:rRevs.map(x=>Math.round(x.v)),backgroundColor:'#3b6fd4',borderRadius:6,borderSkipped:false}]},options:chartOpts()});
   if(cRevs.length) cCli=new Chart(document.getElementById('c-cli'),{type:'bar',data:{labels:cRevs.map(x=>x.n),datasets:[{data:cRevs.map(x=>Math.round(x.v)),backgroundColor:'#36d399',borderRadius:6,borderSkipped:false}]},options:chartOpts()});
+}
 
-  const recent = [...S.log].slice(0,8);
-  document.getElementById('d-recent').innerHTML = recent.length ? recent.map(e=>{
-    const r=S.resources.find(x=>x.id===e.resource_id);
-    const c=S.clients.find(x=>x.id===e.client_id);
-    const rv=calcRev(e), cs=calcCost(e), pf=rv-cs;
-    return `<tr><td class="td-mono">${e.date}</td><td class="td-main">${r?.name||'—'}</td><td>${c?.name||'—'}</td><td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text3)" title="${e.task||''}">${e.task||'—'}</td><td class="td-mono">${e.pages||0}</td><td class="td-mono" style="color:var(--green)">${fmt(rv)}</td><td class="td-mono" style="color:${pf>=0?'var(--green)':'var(--red)'};font-weight:700">${fmt(pf)}</td></tr>`;
-  }).join('') : `<tr><td colspan="7"><div class="empty"><div class="empty-ico">📋</div><div class="empty-txt">No entries yet. Go to Work log to add your first entry.</div></div></td></tr>`;
+// ── Today's attendance snapshot ───────────────────────────
+function renderAttendanceSnapshot(){
+  const el = document.getElementById('d-attendance-snapshot');
+  if(!el) return;
+  const today = getISTDate();
+  const y=today.getFullYear(), m=today.getMonth()+1, d=today.getDate();
+  const isSun = today.getDay()===0;
+  const hol = S.holidays[holidayKey(y,m,d)];
+  const employees = S.resources.filter(r=>r.type==='Employee');
+
+  if(isSun || hol){
+    el.innerHTML = `<div class="card" style="margin-bottom:20px"><div class="card-body" style="padding:16px 20px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:20px">🌤</span>
+      <div><div style="font-weight:600">Today is ${hol?(hol.name||'a holiday'):'Sunday'} — no work day</div><div style="font-size:12px;color:var(--text3)">Attendance snapshot resumes on the next working day.</div></div>
+    </div></div>`;
+    return;
+  }
+  if(!employees.length){ el.innerHTML=''; return; }
+
+  let present=0, half=0, onLeave=0, absent=0, notMarked=0;
+  employees.forEach(r=>{
+    const a = S.attendance[attK(r.id,y,m,d)];
+    if(!a) notMarked++;
+    else if(a.status==='P') present++;
+    else if(a.status==='HF') half++;
+    else if(a.status==='A' && a.leave_type==='LOP') absent++;
+    else if(a.status==='A') onLeave++; // CL/SL/EL
+  });
+
+  const chip = (label,val,color) => `<div style="text-align:center;flex:1;min-width:70px"><div style="font-size:22px;font-weight:700;color:${color}">${val}</div><div style="font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.04em">${label}</div></div>`;
+  el.innerHTML = `<div class="card" style="margin-bottom:20px">
+    <div class="card-hd"><div class="card-title">Today's Attendance — ${MONTHS[m-1]} ${d}, ${y}</div></div>
+    <div class="card-body" style="display:flex;gap:8px;flex-wrap:wrap;padding:18px 20px">
+      ${chip('Present',present,'var(--green)')}
+      ${chip('Half-day',half,'var(--blue)')}
+      ${chip('On leave',onLeave,'var(--purple)')}
+      ${chip('Absent / LOP',absent,'var(--red)')}
+      ${chip('Not marked',notMarked,'var(--amber)')}
+    </div>
+  </div>`;
+}
+
+// ── Leave balance alerts ──────────────────────────────────
+// Flags anyone close to exhausting their pooled CL+SL+EL balance, or who's already
+// hit Loss-of-Pay this month - so problems surface here before payroll day.
+function renderLeaveAlerts(){
+  const el = document.getElementById('d-leave-alerts');
+  if(!el) return;
+  const today = getISTDate();
+  const y=today.getFullYear(), m=today.getMonth()+1;
+  const LOW_BALANCE_THRESHOLD = 2; // days
+
+  const alerts = [];
+  S.resources.filter(r=>r.type==='Employee' && r.joining_date).forEach(r=>{
+    const bal = leaveBalance(r,y,m);
+    const pooledRemaining = bal.cl.remaining + bal.sl.remaining + bal.el.remaining;
+    if(bal.lop.used>0) alerts.push({ r, kind:'lop', text:`${bal.lop.used} Loss-of-Pay day${bal.lop.used>1?'s':''} this month` });
+    else if(pooledRemaining<=LOW_BALANCE_THRESHOLD) alerts.push({ r, kind:'low', text:`Only ${pooledRemaining} day${pooledRemaining===1?'':'s'} of CL+SL+EL left this year` });
+  });
+
+  if(!alerts.length){ el.innerHTML=''; return; }
+
+  el.innerHTML = `<div class="card" style="border-color:var(--red);margin-bottom:20px">
+    <div class="card-hd"><div class="card-title">⚠️ Leave balance alerts</div></div>
+    <div class="card-body" style="padding:6px 20px 16px">
+      ${alerts.map(a=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+        <div><span class="td-main">${a.r.name}</span> <span style="font-size:12px;color:var(--text3)">${a.r.role||''}</span></div>
+        <div style="font-size:12px;color:${a.kind==='lop'?'var(--red)':'var(--amber)'}">${a.text}</div>
+      </div>`).join('')}
+    </div>
+  </div>`;
 }
 
 function getPendingELSettlements(year){
