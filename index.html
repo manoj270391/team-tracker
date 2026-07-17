@@ -40,6 +40,32 @@
   --sw:       230px;
   --hh:       58px;
 }
+/* ── Light theme (auto-switches based on time of day, see theme.js logic) ── */
+[data-theme="light"] {
+  --bg:       #f4f6fa;
+  --bg2:      #ffffff;
+  --bg3:      #eef1f6;
+  --bg4:      #e3e8f0;
+  --border:   #e1e6ee;
+  --border2:  #ccd4e1;
+  --text:     #1a2233;
+  --text2:    #5b6779;
+  --text3:    #8b95a7;
+  --accent:   #3b6fd4;
+  --accent2:  #2f5bb0;
+  --accentt:  rgba(59,111,212,0.10);
+  --green:    #16a374;
+  --greent:   rgba(22,163,116,0.10);
+  --red:      #dc4444;
+  --redt:     rgba(220,68,68,0.10);
+  --amber:    #b8790a;
+  --ambert:   rgba(184,121,10,0.10);
+  --purple:   #7c5cd6;
+  --purplet:  rgba(124,92,214,0.10);
+  --blue:     #2f7fd6;
+  --bluet:    rgba(47,127,214,0.10);
+}
+[data-theme="light"] body { -webkit-font-smoothing: subpixel-antialiased; }
 html { font-size: 14px; }
 body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
 ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -344,6 +370,20 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
 }
 </style>
 </head>
+<script>
+// Applied immediately (before the page paints) to avoid a flash of the wrong theme.
+// A manual override (if the user's ever toggled it) wins; otherwise it's time-based:
+// light 6am–6pm, dark the rest of the time. See applyTheme()/initTheme() further down
+// for the toggle button and the periodic re-check that keeps this in sync while the
+// app stays open across the light/dark boundary.
+(function(){
+  const override = localStorage.getItem('theme_override'); // 'light' | 'dark' | null
+  const hour = new Date().getHours();
+  const timeBasedTheme = (hour>=6 && hour<18) ? 'light' : 'dark';
+  const theme = override || timeBasedTheme;
+  if(theme==='light') document.documentElement.setAttribute('data-theme','light');
+})();
+</script>
 <body>
 
 <!-- ═══════════════════════════════════════════════════════
@@ -445,6 +485,7 @@ tfoot tr td { border-top: 1px solid var(--border2); background: var(--bg3); font
         <div class="db-dot loading" id="db-dot"></div>
         <span id="db-txt">Connecting…</span>
       </div>
+      <button class="btn btn-ghost btn-sm" style="justify-content:center;width:100%;margin-bottom:6px" id="theme-toggle-btn" onclick="toggleThemeOverride()"></button>
       <button class="btn btn-ghost btn-sm" style="justify-content:center;width:100%" onclick="resetConfig()">⚙ Reconfigure</button>
     </div>
   </aside>
@@ -731,6 +772,47 @@ const fmt   = n => (n==null||n==='') ? '—' : '₹'+Math.round(n).toLocaleStrin
 // broken character and corrupts the rest of the string. Use "Rs." for anything drawn
 // directly into a generated PDF; the in-app HTML preview can keep using fmt()/₹ normally.
 const fmtPdf = n => (n==null||n==='') ? '—' : 'Rs. '+Math.round(n).toLocaleString('en-IN');
+
+// ── THEME (auto light/dark by time of day, with manual override) ─────────
+// The very first inline <script> in <head> already applied the correct theme before
+// paint (avoids a flash of the wrong theme). This block just keeps the toggle button's
+// label in sync and re-checks the time-based theme periodically, so a session left open
+// across the 6am/6pm boundary switches automatically without needing a page refresh.
+function currentTheme(){ return document.documentElement.getAttribute('data-theme')==='light' ? 'light' : 'dark'; }
+function timeBasedTheme(){ const h=new Date().getHours(); return (h>=6 && h<18) ? 'light' : 'dark'; }
+
+function applyTheme(theme){
+  if(theme==='light') document.documentElement.setAttribute('data-theme','light');
+  else document.documentElement.removeAttribute('data-theme');
+  const btn = document.getElementById('theme-toggle-btn');
+  if(!btn) return;
+  const override = localStorage.getItem('theme_override'); // 'light' | 'dark' | null (auto)
+  if(!override) btn.textContent = `🕐 Auto (${theme==='light'?'☀️ Light':'🌙 Dark'})`;
+  else btn.textContent = theme==='light' ? '☀️ Light (fixed)' : '🌙 Dark (fixed)';
+  btn.title = 'Click to cycle: Auto by time of day → Light → Dark';
+}
+
+// Cycles Auto -> Light -> Dark -> Auto -> ... "Auto" switches automatically between
+// light (6am-6pm) and dark (rest of the time); Light/Dark pin it regardless of time.
+window.toggleThemeOverride = function(){
+  const override = localStorage.getItem('theme_override');
+  const next = override===null ? 'light' : override==='light' ? 'dark' : null;
+  if(next===null) localStorage.removeItem('theme_override');
+  else localStorage.setItem('theme_override', next);
+  applyTheme(next || timeBasedTheme());
+};
+
+function initTheme(){
+  applyTheme(currentTheme());
+  // Re-check every 5 minutes in case the session stays open across the light/dark
+  // boundary while in Auto mode.
+  setInterval(()=>{
+    const override = localStorage.getItem('theme_override');
+    if(override) return; // pinned - nothing to re-check
+    const theme = timeBasedTheme();
+    if(theme !== currentTheme()) applyTheme(theme);
+  }, 5*60*1000);
+}
 
 // ── COMPANY INFO (salary slip header) ─────────────────────
 const COMPANY = {
@@ -1503,7 +1585,10 @@ function renderDash() {
 
   const rRevs = S.resources.map(r=>({ n:r.name.split(' ')[0], v:validLog.filter(e=>e.resource_id===r.id).reduce((s,e)=>s+calcRev(e),0) }));
   const cRevs = S.clients.map(c=>({ n:c.name, v:validLog.filter(e=>e.client_id===c.id).reduce((s,e)=>s+calcRev(e),0) }));
-  const chartOpts = (cb) => ({ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{grid:{color:'#1a2236'},ticks:{color:'#4a5568',font:{size:11}}},y:{grid:{color:'#1a2236'},ticks:{color:'#4a5568',font:{size:11},callback:v=>'₹'+v.toLocaleString('en-IN')}}} });
+  const isLight = document.documentElement.getAttribute('data-theme')==='light';
+  const gridColor = isLight ? '#e1e6ee' : '#1a2236';
+  const tickColor = isLight ? '#5b6779' : '#4a5568';
+  const chartOpts = (cb) => ({ responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:11}}},y:{grid:{color:gridColor},ticks:{color:tickColor,font:{size:11},callback:v=>'₹'+v.toLocaleString('en-IN')}}} });
   if(cRes){cRes.destroy();cRes=null;} if(cCli){cCli.destroy();cCli=null;}
   if(rRevs.length) cRes=new Chart(document.getElementById('c-res'),{type:'bar',data:{labels:rRevs.map(x=>x.n),datasets:[{data:rRevs.map(x=>Math.round(x.v)),backgroundColor:'#3b6fd4',borderRadius:6,borderSkipped:false}]},options:chartOpts()});
   if(cRevs.length) cCli=new Chart(document.getElementById('c-cli'),{type:'bar',data:{labels:cRevs.map(x=>x.n),datasets:[{data:cRevs.map(x=>Math.round(x.v)),backgroundColor:'#36d399',borderRadius:6,borderSkipped:false}]},options:chartOpts()});
@@ -2845,6 +2930,7 @@ function toast(msg,type='ok'){
 }
 
 // ── Auto-load config ──────────────────────────────────────
+initTheme();
 const savedUrl=localStorage.getItem('sb_url'), savedKey=localStorage.getItem('sb_key');
 if(savedUrl&&savedKey){
   SB_URL=savedUrl; SB_KEY=savedKey;
